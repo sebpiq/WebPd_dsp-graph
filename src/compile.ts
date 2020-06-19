@@ -10,70 +10,59 @@
  */
 
 import * as graphMutations from './graph-mutations'
-import fromPairs from 'lodash.frompairs'
 import { getReferencesToSubpatch, ReferencesToSubpatch } from './pdjson-helpers'
 import { getSources, getSinks } from './graph-helpers'
 
 export default (pd: PdJson.Pd): PdDspGraph.Graph => {
-    const [graph, idTranslationMaps] = buildGraph(pd)
-    flattenGraph(pd, graph, idTranslationMaps)
+    const graph = buildGraph(pd)
+    flattenGraph(pd, graph)
     return graph
 }
 
-type IdTranslationMap = Readonly<{ [nodeLocalId: string]: PdDspGraph.NodeId }>
-export type IdTranslationMaps = Readonly<{
-    [patchId: string]: IdTranslationMap
-}>
+export const buildGraphNodeId = (
+    patchId: PdJson.ObjectGlobalId,
+    nodeId: PdJson.ObjectLocalId
+): PdDspGraph.NodeId => `${patchId}:${nodeId}`
 
 // Given the base structure of a `pd` object, convert the explicit connections into our graph format.
-export const buildGraph = (
-    pd: PdJson.Pd
-): [PdDspGraph.Graph, IdTranslationMaps] => {
+export const buildGraph = (pd: PdJson.Pd): PdDspGraph.Graph => {
     const graph: PdDspGraph.Graph = {}
-    let idCounter = -1
-    const nextNodeId = (): string => `${++idCounter}`
 
-    const idTranslationMaps: IdTranslationMaps = fromPairs(
-        Object.values(pd.patches).map((patch) => {
-            const idTranslationMap: IdTranslationMap = fromPairs(
-                Object.values(patch.nodes).map((patchNode) => {
-                    const graphNodeId = nextNodeId()
-                    graphMutations.ensureNode(graph, graphNodeId, patchNode)
-                    return [patchNode.id, graphNodeId]
-                })
-            )
-
-            patch.connections.forEach((patchConnection) => {
-                const graphSourceNode =
-                    graph[idTranslationMap[patchConnection.source.id]]
-                const graphSinkNode =
-                    graph[idTranslationMap[patchConnection.sink.id]]
-                graphMutations.connect(
-                    graph,
-                    {
-                        id: graphSourceNode.id,
-                        portlet: patchConnection.source.portlet,
-                    },
-                    {
-                        id: graphSinkNode.id,
-                        portlet: patchConnection.sink.portlet,
-                    }
-                )
-            })
-            return [patch.id, idTranslationMap]
+    Object.values(pd.patches).forEach((patch) => {
+        Object.values(patch.nodes).forEach((pdNode) => {
+            const graphNodeId = buildGraphNodeId(patch.id, pdNode.id)
+            graphMutations.ensureNode(graph, graphNodeId, pdNode)
         })
-    )
-    return [graph, idTranslationMaps]
+
+        patch.connections.forEach((patchConnection) => {
+            const graphSourceNodeId = buildGraphNodeId(
+                patch.id,
+                patchConnection.source.id
+            )
+            const graphSinkNodeId = buildGraphNodeId(
+                patch.id,
+                patchConnection.sink.id
+            )
+            graphMutations.connect(
+                graph,
+                {
+                    id: graphSourceNodeId,
+                    portlet: patchConnection.source.portlet,
+                },
+                {
+                    id: graphSinkNodeId,
+                    portlet: patchConnection.sink.portlet,
+                }
+            )
+        })
+    })
+    return graph
 }
 
 // Given a pd object, inline all the subpatches into the given `graph`, so that objects indirectly wired through
 // the [inlet] and [outlet] objects of a subpatch are instead directly wired into the same graph. Also, deletes
 // [pd subpatch], [inlet] and [outlet] nodes (tilde or not).
-export const flattenGraph = (
-    pd: PdJson.Pd,
-    graph: PdDspGraph.Graph,
-    idTranslationMaps: IdTranslationMaps
-): void => {
+export const flattenGraph = (pd: PdJson.Pd, graph: PdDspGraph.Graph): void => {
     const patchesToInline = new Set<PdJson.ObjectGlobalId>(
         Object.keys(pd.patches)
     )
@@ -86,7 +75,7 @@ export const flattenGraph = (
             if (hasDependencies) {
                 return
             }
-            _inlineSubpatch(pd, subpatch, graph, idTranslationMaps)
+            _inlineSubpatch(pd, subpatch, graph)
             patchesToInline.delete(subpatch.id)
         })
     }
@@ -97,26 +86,15 @@ export const flattenGraph = (
 export const _inlineSubpatch = (
     pd: PdJson.Pd,
     subpatch: PdJson.Patch,
-    graph: PdDspGraph.Graph,
-    idTranslationMaps: IdTranslationMaps
+    graph: PdDspGraph.Graph
 ): void => {
     const subpatchReferences = getReferencesToSubpatch(pd, subpatch.id)
-    _inlineSubpatchInlets(
-        graph,
-        subpatch,
-        subpatchReferences,
-        idTranslationMaps
-    )
-    _inlineSubpatchOutlets(
-        graph,
-        subpatch,
-        subpatchReferences,
-        idTranslationMaps
-    )
+    _inlineSubpatchInlets(graph, subpatch, subpatchReferences)
+    _inlineSubpatchOutlets(graph, subpatch, subpatchReferences)
     subpatchReferences.forEach(([outerPatchId, subpatchNodeId]) =>
         graphMutations.deleteNode(
             graph,
-            idTranslationMaps[outerPatchId][subpatchNodeId]
+            buildGraphNodeId(outerPatchId, subpatchNodeId)
         )
     )
 }
@@ -124,15 +102,14 @@ export const _inlineSubpatch = (
 export const _inlineSubpatchInlets = (
     graph: PdDspGraph.Graph,
     subpatch: PdJson.Patch,
-    referencesToSubpatch: ReferencesToSubpatch,
-    idTranslationMaps: IdTranslationMaps
+    referencesToSubpatch: ReferencesToSubpatch
 ): void => {
     subpatch.inlets.forEach(
         (
             inletNodeId: PdJson.ObjectLocalId,
             subpatchNodeInlet: PdJson.PortletId
         ) => {
-            inletNodeId = idTranslationMaps[subpatch.id][inletNodeId]
+            inletNodeId = buildGraphNodeId(subpatch.id, inletNodeId)
             // Sinks are nodes inside the subpatch which receive connections from the [inlet] object.
             const sinkAddresses = getSinks(graph, inletNodeId, 0)
             referencesToSubpatch.forEach(([outerPatchId, subpatchNodeId]) => {
@@ -140,7 +117,7 @@ export const _inlineSubpatchInlets = (
                 // inlet of the [pd subpatch] object.
                 const sourceAddresses = getSources(
                     graph,
-                    idTranslationMaps[outerPatchId][subpatchNodeId],
+                    buildGraphNodeId(outerPatchId, subpatchNodeId),
                     subpatchNodeInlet
                 )
                 sourceAddresses.forEach((sourceAddress) =>
@@ -161,15 +138,14 @@ export const _inlineSubpatchInlets = (
 export const _inlineSubpatchOutlets = (
     graph: PdDspGraph.Graph,
     subpatch: PdJson.Patch,
-    referencesToSubpatch: ReferencesToSubpatch,
-    idTranslationMaps: IdTranslationMaps
+    referencesToSubpatch: ReferencesToSubpatch
 ): void => {
     subpatch.outlets.forEach(
         (
             outletNodeId: PdJson.ObjectLocalId,
             subpatchNodeOutlet: PdJson.PortletId
         ) => {
-            outletNodeId = idTranslationMaps[subpatch.id][outletNodeId]
+            outletNodeId = buildGraphNodeId(subpatch.id, outletNodeId)
             // Sources are nodes inside the subpatch which are connected to the [outlet] object.
             const sourceAddresses = getSources(graph, outletNodeId, 0)
             referencesToSubpatch.forEach(([outerPatchId, subpatchNodeId]) => {
@@ -177,7 +153,7 @@ export const _inlineSubpatchOutlets = (
                 // outlet of the [pd subpatch] object.
                 const sinkAddresses = getSinks(
                     graph,
-                    idTranslationMaps[outerPatchId][subpatchNodeId],
+                    buildGraphNodeId(outerPatchId, subpatchNodeId),
                     subpatchNodeOutlet
                 )
                 sourceAddresses.forEach((sourceAddress) =>

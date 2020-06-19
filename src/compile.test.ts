@@ -16,7 +16,6 @@ import {
     _inlineSubpatchInlets,
     _inlineSubpatchOutlets,
     _inlineSubpatch,
-    IdTranslationMaps,
 } from './compile'
 import {
     pdJsonPatchDefaults,
@@ -27,10 +26,10 @@ import {
 import { getReferencesToSubpatch } from './pdjson-helpers'
 
 type ConciseConnection = [
-    PdJson.ObjectLocalId,
-    PdJson.PortletId,
-    PdJson.ObjectLocalId,
-    PdJson.PortletId
+    PdDspGraph.NodeId,
+    PdDspGraph.PortletId,
+    PdDspGraph.NodeId,
+    PdDspGraph.PortletId
 ]
 type ConcisePatch = Partial<Omit<PdJson.Patch, 'connections'>> & {
     nodes: { [localId: string]: PdJson.Node }
@@ -41,16 +40,6 @@ type ConciseGraph = {
     [pdNodeId: string]: {
         sinks?: Array<ConciseConnection>
         sources?: Array<ConciseConnection>
-    }
-}
-
-type IdTranslator = (pdId: PdJson.ObjectLocalId) => PdDspGraph.NodeId
-const _makeIdTranslator = (
-    idTranslationMaps: IdTranslationMaps
-): IdTranslator => {
-    return (pdId: PdJson.ObjectLocalId): PdDspGraph.NodeId => {
-        const [patchId] = pdId.split(':')
-        return idTranslationMaps[patchId][pdId]
     }
 }
 
@@ -81,30 +70,24 @@ const _makePd = (concisePd: ConcisePd): PdJson.Pd => {
     return pd
 }
 
-const _makeGraph = (
-    idTranslationMaps: IdTranslationMaps,
-    conciseGraph: ConciseGraph
-): PdDspGraph.Graph => {
-    const _translateId = _makeIdTranslator(idTranslationMaps)
-
+const _makeGraph = (conciseGraph: ConciseGraph): PdDspGraph.Graph => {
     const _makeConnection = (
         conciseConnection: ConciseConnection
     ): PdDspGraph.Connection => ({
         source: {
-            id: _translateId(conciseConnection[0]),
+            id: conciseConnection[0],
             portlet: conciseConnection[1],
         },
         sink: {
-            id: _translateId(conciseConnection[2]),
+            id: conciseConnection[2],
             portlet: conciseConnection[3],
         },
     })
 
     const graph: PdDspGraph.Graph = {}
-    Object.entries(conciseGraph).forEach(([pdNodeId, partialNode]) => {
+    Object.entries(conciseGraph).forEach(([nodeId, partialNode]) => {
         partialNode.sources = partialNode.sources || []
         partialNode.sinks = partialNode.sinks || []
-        const nodeId = _translateId(pdNodeId)
         graph[nodeId] = {
             ...nodeDefaults(nodeId),
             sources: partialNode.sources.map((conciseConnection) =>
@@ -122,7 +105,7 @@ const _assertGraphsEqual = (
     actual: PdDspGraph.Graph,
     expected: PdDspGraph.Graph
 ): void => {
-    assert.deepEqual(Object.keys(actual), Object.keys(expected))
+    assert.deepEqual(Object.keys(actual).sort(), Object.keys(expected).sort())
     Object.keys(actual).forEach((nodeId) =>
         assert.deepEqual(actual[nodeId], expected[nodeId])
     )
@@ -134,55 +117,47 @@ describe('compile', () => {
             const pd: PdJson.Pd = _makePd({
                 patches: {
                     // Connected nodes
-                    patch1: {
+                    p1: {
                         nodes: {
-                            node1: {
-                                ...pdJsonNodeDefaults('node1'),
-                                refId: '2',
+                            n1: {
+                                ...pdJsonNodeDefaults('n1'),
+                                refId: 'p2',
                             },
-                            node2: pdJsonNodeDefaults('node2'),
+                            n2: pdJsonNodeDefaults('n2'),
                         },
-                        connections: [['node1', 0, 'node2', 0]],
+                        connections: [['n1', 0, 'n2', 0]],
                     },
                     // A node with no connections
-                    patch2: {
+                    p2: {
                         nodes: {
-                            node1: pdJsonNodeDefaults('node1'),
+                            n1: pdJsonNodeDefaults('n1'),
                         },
                         connections: [],
                     },
                 },
             })
 
-            const [graph, idTranslationMaps] = buildGraph(pd)
-            assert.deepEqual(idTranslationMaps, {
-                patch1: {
-                    node1: '0',
-                    node2: '1',
-                },
-                patch2: {
-                    node1: '2',
-                },
-            })
+            const graph = buildGraph(pd)
+
             const connection = {
-                source: { id: '0', portlet: 0 },
-                sink: { id: '1', portlet: 0 },
+                source: { id: 'p1:n1', portlet: 0 },
+                sink: { id: 'p1:n2', portlet: 0 },
             }
             assert.deepEqual(graph, {
-                '0': {
-                    id: '0',
+                'p1:n1': {
+                    id: 'p1:n1',
                     proto: 'DUMMY',
                     sources: [],
                     sinks: [connection],
                 },
-                '1': {
-                    id: '1',
+                'p1:n2': {
+                    id: 'p1:n2',
                     proto: 'DUMMY',
                     sources: [connection],
                     sinks: [],
                 },
-                '2': {
-                    id: '2',
+                'p2:n1': {
+                    id: 'p2:n1',
                     proto: 'DUMMY',
                     sinks: [],
                     sources: [],
@@ -199,85 +174,78 @@ describe('compile', () => {
                         p: {
                             ...pdJsonPatchDefaults('p'),
                             nodes: {
-                                'p:node1': pdJsonNodeDefaults('p:node1'),
-                                'p:node2': pdJsonNodeDefaults('p:node2'),
-                                'p:sp': {
-                                    ...pdJsonNodeDefaults('p:sp'),
+                                n1: pdJsonNodeDefaults('n1'),
+                                n2: pdJsonNodeDefaults('n2'),
+                                sp: {
+                                    ...pdJsonNodeDefaults('sp'),
                                     refId: 'sp',
                                 },
                             },
                             connections: [
-                                ['p:node1', 0, 'p:sp', 0],
-                                ['p:node1', 0, 'p:sp', 1],
-                                ['p:node2', 0, 'p:sp', 0],
+                                ['n1', 0, 'sp', 0],
+                                ['n1', 0, 'sp', 1],
+                                ['n2', 0, 'sp', 0],
                             ],
                         },
                         sp: {
                             ...pdJsonPatchDefaults('sp'),
                             nodes: {
-                                'sp:inlet1': pdJsonNodeDefaults('sp:inlet1'),
-                                'sp:inlet2': pdJsonNodeDefaults('sp:inlet2'),
-                                'sp:node1': pdJsonNodeDefaults('sp:node1'),
-                                'sp:node2': pdJsonNodeDefaults('sp:node2'),
+                                inlet1: pdJsonNodeDefaults('inlet1'),
+                                inlet2: pdJsonNodeDefaults('inlet2'),
+                                n1: pdJsonNodeDefaults('n1'),
+                                n2: pdJsonNodeDefaults('n2'),
                             },
                             connections: [
-                                ['sp:inlet1', 0, 'sp:node1', 0],
-                                ['sp:inlet2', 0, 'sp:node2', 3],
+                                ['inlet1', 0, 'n1', 0],
+                                ['inlet2', 0, 'n2', 3],
                             ],
-                            inlets: ['sp:inlet1', 'sp:inlet2'],
+                            inlets: ['inlet1', 'inlet2'],
                         },
                     },
                 })
 
-                const [graph, idTranslationMaps] = buildGraph(pd)
+                const graph = buildGraph(pd)
                 const referencesToSubpatch = getReferencesToSubpatch(pd, 'sp')
                 _inlineSubpatchInlets(
                     graph,
                     pd.patches['sp'],
-                    referencesToSubpatch,
-                    idTranslationMaps
+                    referencesToSubpatch
                 )
 
                 // inlet nodes should be deleted
-                assert.equal(
-                    graph[idTranslationMaps['sp']['sp:inlet1']],
-                    undefined
-                )
-                assert.equal(
-                    graph[idTranslationMaps['sp']['sp:inlet2']],
-                    undefined
-                )
+                assert.equal(graph['sp:inlet1'], undefined)
+                assert.equal(graph['sp:inlet2'], undefined)
 
-                const expectedGraph = _makeGraph(idTranslationMaps, {
-                    'p:node1': {
+                const expectedGraph = _makeGraph({
+                    'p:n1': {
                         sinks: [
-                            ['p:node1', 0, 'p:sp', 0],
-                            ['p:node1', 0, 'p:sp', 1],
-                            ['p:node1', 0, 'sp:node1', 0],
-                            ['p:node1', 0, 'sp:node2', 3],
+                            ['p:n1', 0, 'p:sp', 0],
+                            ['p:n1', 0, 'p:sp', 1],
+                            ['p:n1', 0, 'sp:n1', 0],
+                            ['p:n1', 0, 'sp:n2', 3],
                         ],
                     },
-                    'p:node2': {
+                    'p:n2': {
                         sinks: [
-                            ['p:node2', 0, 'p:sp', 0],
-                            ['p:node2', 0, 'sp:node1', 0],
+                            ['p:n2', 0, 'p:sp', 0],
+                            ['p:n2', 0, 'sp:n1', 0],
                         ],
                     },
                     'p:sp': {
                         sources: [
-                            ['p:node1', 0, 'p:sp', 0],
-                            ['p:node1', 0, 'p:sp', 1],
-                            ['p:node2', 0, 'p:sp', 0],
+                            ['p:n1', 0, 'p:sp', 0],
+                            ['p:n1', 0, 'p:sp', 1],
+                            ['p:n2', 0, 'p:sp', 0],
                         ],
                     },
-                    'sp:node1': {
+                    'sp:n1': {
                         sources: [
-                            ['p:node1', 0, 'sp:node1', 0],
-                            ['p:node2', 0, 'sp:node1', 0],
+                            ['p:n1', 0, 'sp:n1', 0],
+                            ['p:n2', 0, 'sp:n1', 0],
                         ],
                     },
-                    'sp:node2': {
-                        sources: [['p:node1', 0, 'sp:node2', 3]],
+                    'sp:n2': {
+                        sources: [['p:n1', 0, 'sp:n2', 3]],
                     },
                 })
 
@@ -292,84 +260,82 @@ describe('compile', () => {
                         p: {
                             ...pdJsonPatchDefaults('p'),
                             nodes: {
-                                'p:sp': {
-                                    ...pdJsonNodeDefaults('p:sp'),
+                                sp: {
+                                    ...pdJsonNodeDefaults('sp'),
                                     refId: 'sp',
                                 },
-                                'p:node1': pdJsonNodeDefaults('p:node1'),
-                                'p:node2': pdJsonNodeDefaults('p:node2'),
+                                n1: pdJsonNodeDefaults('n1'),
+                                n2: pdJsonNodeDefaults('n2'),
                             },
                             connections: [
-                                ['p:sp', 0, 'p:node1', 0],
-                                ['p:sp', 1, 'p:node1', 1],
-                                ['p:sp', 0, 'p:node2', 1],
+                                ['sp', 0, 'n1', 0],
+                                ['sp', 1, 'n1', 1],
+                                ['sp', 0, 'n2', 1],
                             ],
                         },
                         sp: {
                             ...pdJsonPatchDefaults('sp'),
                             nodes: {
-                                'sp:node1': pdJsonNodeDefaults('sp:node1'),
-                                'sp:node2': pdJsonNodeDefaults('sp:node2'),
-                                'sp:outlet1': pdJsonNodeDefaults('sp:outlet1'),
-                                'sp:outlet2': pdJsonNodeDefaults('sp:outlet2'),
+                                n1: pdJsonNodeDefaults('n1'),
+                                n2: pdJsonNodeDefaults('n2'),
+                                outlet1: pdJsonNodeDefaults('outlet1'),
+                                outlet2: pdJsonNodeDefaults('outlet2'),
                             },
                             connections: [
-                                ['sp:node1', 3, 'sp:outlet1', 0],
-                                ['sp:node2', 0, 'sp:outlet2', 0],
+                                ['n1', 3, 'outlet1', 0],
+                                ['n2', 0, 'outlet2', 0],
                             ],
-                            outlets: ['sp:outlet1', 'sp:outlet2'],
+                            outlets: ['outlet1', 'outlet2'],
                         },
                     },
                 })
 
-                const [graph, idTranslationMaps] = buildGraph(pd)
+                const graph = buildGraph(pd)
+
+                // outlet nodes should be created
+                assert.equal(!!graph['sp:outlet1'], true)
+                assert.equal(!!graph['sp:outlet2'], true)
+
                 const referencesToSubpatch = getReferencesToSubpatch(pd, 'sp')
                 _inlineSubpatchOutlets(
                     graph,
                     pd.patches['sp'],
-                    referencesToSubpatch,
-                    idTranslationMaps
+                    referencesToSubpatch
                 )
 
                 // outlet nodes should be deleted
-                assert.equal(
-                    graph[idTranslationMaps['sp']['sp:outlet1']],
-                    undefined
-                )
-                assert.equal(
-                    graph[idTranslationMaps['sp']['sp:outlet2']],
-                    undefined
-                )
+                assert.equal(graph['sp:outlet1'], undefined)
+                assert.equal(graph['sp:outlet2'], undefined)
 
-                const expectedGraph = _makeGraph(idTranslationMaps, {
-                    'sp:node1': {
+                const expectedGraph = _makeGraph({
+                    'sp:n1': {
                         sinks: [
-                            ['sp:node1', 3, 'p:node1', 0],
-                            ['sp:node1', 3, 'p:node2', 1],
+                            ['sp:n1', 3, 'p:n1', 0],
+                            ['sp:n1', 3, 'p:n2', 1],
                         ],
                     },
-                    'sp:node2': {
-                        sinks: [['sp:node2', 0, 'p:node1', 1]],
+                    'sp:n2': {
+                        sinks: [['sp:n2', 0, 'p:n1', 1]],
                     },
                     'p:sp': {
                         sinks: [
-                            ['p:sp', 0, 'p:node1', 0],
-                            ['p:sp', 1, 'p:node1', 1],
-                            ['p:sp', 0, 'p:node2', 1],
+                            ['p:sp', 0, 'p:n1', 0],
+                            ['p:sp', 1, 'p:n1', 1],
+                            ['p:sp', 0, 'p:n2', 1],
                         ],
                     },
-                    'p:node1': {
+                    'p:n1': {
                         sources: [
-                            ['p:sp', 0, 'p:node1', 0],
-                            ['p:sp', 1, 'p:node1', 1],
-                            ['sp:node1', 3, 'p:node1', 0],
-                            ['sp:node2', 0, 'p:node1', 1],
+                            ['p:sp', 0, 'p:n1', 0],
+                            ['p:sp', 1, 'p:n1', 1],
+                            ['sp:n1', 3, 'p:n1', 0],
+                            ['sp:n2', 0, 'p:n1', 1],
                         ],
                     },
-                    'p:node2': {
+                    'p:n2': {
                         sources: [
-                            ['p:sp', 0, 'p:node2', 1],
-                            ['sp:node1', 3, 'p:node2', 1],
+                            ['p:sp', 0, 'p:n2', 1],
+                            ['sp:n1', 3, 'p:n2', 1],
                         ],
                     },
                 })
@@ -383,109 +349,102 @@ describe('compile', () => {
                     patches: {
                         p: {
                             nodes: {
-                                'p:node1': pdJsonNodeDefaults('p:node1'),
-                                'p:sp': {
-                                    ...pdJsonNodeDefaults('p:sp'),
+                                n1: pdJsonNodeDefaults('n1'),
+                                sp: {
+                                    ...pdJsonNodeDefaults('sp'),
                                     refId: 'sp',
                                 },
-                                'p:node2': pdJsonNodeDefaults('p:node2'),
-                                'p:node3': pdJsonNodeDefaults('p:node3'),
+                                n2: pdJsonNodeDefaults('n2'),
+                                n3: pdJsonNodeDefaults('n3'),
                             },
                             connections: [
-                                ['p:node1', 2, 'p:sp', 0],
-                                ['p:sp', 0, 'p:node2', 1],
-                                ['p:node2', 0, 'p:node3', 1],
+                                ['n1', 2, 'sp', 0],
+                                ['sp', 0, 'n2', 1],
+                                ['n2', 0, 'n3', 1],
                             ],
                         },
                         sp: {
                             nodes: {
-                                'sp:inlet': pdJsonNodeDefaults('sp:inlet'),
-                                'sp:node1': pdJsonNodeDefaults('sp:node1'),
-                                'sp:outlet': pdJsonNodeDefaults('sp:outlet'),
+                                inlet: pdJsonNodeDefaults('inlet'),
+                                n1: pdJsonNodeDefaults('n1'),
+                                outlet: pdJsonNodeDefaults('outlet'),
                             },
                             connections: [
-                                ['sp:inlet', 0, 'sp:node1', 1],
-                                ['sp:node1', 3, 'sp:outlet', 0],
+                                ['inlet', 0, 'n1', 1],
+                                ['n1', 3, 'outlet', 0],
                             ],
-                            inlets: ['sp:inlet'],
-                            outlets: ['sp:outlet'],
+                            inlets: ['inlet'],
+                            outlets: ['outlet'],
                         },
                     },
                 })
 
-                const [graph, idTranslationMaps] = buildGraph(pd)
-                _inlineSubpatch(pd, pd.patches['sp'], graph, idTranslationMaps)
+                const graph = buildGraph(pd)
+                _inlineSubpatch(pd, pd.patches['sp'], graph)
 
-                const expectedGraph: PdDspGraph.Graph = _makeGraph(
-                    idTranslationMaps,
-                    {
-                        'p:node1': {
-                            sources: [],
-                            sinks: [['p:node1', 2, 'sp:node1', 1]],
-                        },
-                        'sp:node1': {
-                            sources: [['p:node1', 2, 'sp:node1', 1]],
-                            sinks: [['sp:node1', 3, 'p:node2', 1]],
-                        },
-                        'p:node2': {
-                            sources: [['sp:node1', 3, 'p:node2', 1]],
-                            sinks: [['p:node2', 0, 'p:node3', 1]],
-                        },
-                        'p:node3': {
-                            sources: [['p:node2', 0, 'p:node3', 1]],
-                            sinks: [],
-                        },
-                    }
-                )
+                const expectedGraph: PdDspGraph.Graph = _makeGraph({
+                    'p:n1': {
+                        sources: [],
+                        sinks: [['p:n1', 2, 'sp:n1', 1]],
+                    },
+                    'sp:n1': {
+                        sources: [['p:n1', 2, 'sp:n1', 1]],
+                        sinks: [['sp:n1', 3, 'p:n2', 1]],
+                    },
+                    'p:n2': {
+                        sources: [['sp:n1', 3, 'p:n2', 1]],
+                        sinks: [['p:n2', 0, 'p:n3', 1]],
+                    },
+                    'p:n3': {
+                        sources: [['p:n2', 0, 'p:n3', 1]],
+                        sinks: [],
+                    },
+                })
                 _assertGraphsEqual(graph, expectedGraph)
             })
 
             it('should inline graph with passthrough connections', () => {
                 const pd: PdJson.Pd = _makePd({
                     patches: {
-                        // Connected nodes
                         p: {
                             nodes: {
-                                'p:node1': pdJsonNodeDefaults('p:node1'),
-                                'p:sp': {
-                                    ...pdJsonNodeDefaults('p:sp'),
+                                n1: pdJsonNodeDefaults('n1'),
+                                sp: {
+                                    ...pdJsonNodeDefaults('sp'),
                                     refId: 'sp',
                                 },
-                                'p:node2': pdJsonNodeDefaults('p:node2'),
+                                n2: pdJsonNodeDefaults('n2'),
                             },
                             connections: [
-                                ['p:node1', 1, 'p:sp', 0],
-                                ['p:sp', 0, 'p:node2', 1],
+                                ['n1', 1, 'sp', 0],
+                                ['sp', 0, 'n2', 1],
                             ],
                         },
                         sp: {
                             nodes: {
-                                'sp:inlet': pdJsonNodeDefaults('sp:inlet'),
-                                'sp:outlet': pdJsonNodeDefaults('sp:outlet'),
+                                inlet: pdJsonNodeDefaults('inlet'),
+                                outlet: pdJsonNodeDefaults('outlet'),
                             },
-                            connections: [['sp:inlet', 0, 'sp:outlet', 0]],
-                            inlets: ['sp:inlet'],
-                            outlets: ['sp:outlet'],
+                            connections: [['inlet', 0, 'outlet', 0]],
+                            inlets: ['inlet'],
+                            outlets: ['outlet'],
                         },
                     },
                 })
 
-                const [graph, idTranslationMaps] = buildGraph(pd)
-                _inlineSubpatch(pd, pd.patches['sp'], graph, idTranslationMaps)
+                const graph = buildGraph(pd)
+                _inlineSubpatch(pd, pd.patches['sp'], graph)
 
-                const expectedGraph: PdDspGraph.Graph = _makeGraph(
-                    idTranslationMaps,
-                    {
-                        'p:node1': {
-                            sources: [],
-                            sinks: [['p:node1', 1, 'p:node2', 1]],
-                        },
-                        'p:node2': {
-                            sources: [['p:node1', 1, 'p:node2', 1]],
-                            sinks: [],
-                        },
-                    }
-                )
+                const expectedGraph: PdDspGraph.Graph = _makeGraph({
+                    'p:n1': {
+                        sources: [],
+                        sinks: [['p:n1', 1, 'p:n2', 1]],
+                    },
+                    'p:n2': {
+                        sources: [['p:n1', 1, 'p:n2', 1]],
+                        sinks: [],
+                    },
+                })
                 _assertGraphsEqual(graph, expectedGraph)
             })
         })
@@ -496,71 +455,68 @@ describe('compile', () => {
                     // Connected nodes
                     p: {
                         nodes: {
-                            'p:node1': pdJsonNodeDefaults('p:node1'),
-                            'p:sp': {
-                                ...pdJsonNodeDefaults('p:sp'),
+                            n1: pdJsonNodeDefaults('n1'),
+                            sp: {
+                                ...pdJsonNodeDefaults('sp'),
                                 refId: 'sp',
                             },
-                            'p:node2': pdJsonNodeDefaults('p:node2'),
+                            n2: pdJsonNodeDefaults('n2'),
                         },
                         connections: [
-                            ['p:node1', 1, 'p:sp', 0],
-                            ['p:sp', 0, 'p:node2', 3],
+                            ['n1', 1, 'sp', 0],
+                            ['sp', 0, 'n2', 3],
                         ],
                     },
                     sp: {
                         nodes: {
-                            'sp:inlet': pdJsonNodeDefaults('sp:inlet'),
-                            'sp:ssp': {
-                                ...pdJsonNodeDefaults('sp:ssp'),
+                            inlet: pdJsonNodeDefaults('inlet'),
+                            ssp: {
+                                ...pdJsonNodeDefaults('ssp'),
                                 refId: 'ssp',
                             },
-                            'sp:outlet': pdJsonNodeDefaults('sp:outlet'),
+                            outlet: pdJsonNodeDefaults('outlet'),
                         },
                         connections: [
-                            ['sp:inlet', 0, 'sp:ssp', 0],
-                            ['sp:ssp', 0, 'sp:outlet', 0],
+                            ['inlet', 0, 'ssp', 0],
+                            ['ssp', 0, 'outlet', 0],
                         ],
-                        inlets: ['sp:inlet'],
-                        outlets: ['sp:outlet'],
+                        inlets: ['inlet'],
+                        outlets: ['outlet'],
                     },
                     ssp: {
                         ...pdJsonPatchDefaults('ssp'),
                         nodes: {
-                            'ssp:inlet': pdJsonNodeDefaults('ssp:inlet'),
-                            'ssp:node1': pdJsonNodeDefaults('ssp:node1'),
-                            'ssp:outlet': pdJsonNodeDefaults('ssp:outlet'),
+                            inlet: pdJsonNodeDefaults('inlet'),
+                            n1: pdJsonNodeDefaults('n1'),
+                            outlet: pdJsonNodeDefaults('outlet'),
                         },
                         connections: [
-                            ['ssp:inlet', 0, 'ssp:node1', 1],
-                            ['ssp:node1', 2, 'ssp:outlet', 0],
+                            ['inlet', 0, 'n1', 1],
+                            ['n1', 2, 'outlet', 0],
                         ],
-                        inlets: ['ssp:inlet'],
-                        outlets: ['ssp:outlet'],
+                        inlets: ['inlet'],
+                        outlets: ['outlet'],
                     },
                 },
             })
 
-            const [graph, idTranslationMaps] = buildGraph(pd)
-            flattenGraph(pd, graph, idTranslationMaps)
+            const graph = buildGraph(pd)
+            flattenGraph(pd, graph)
 
-            const expectedGraph: PdDspGraph.Graph = _makeGraph(
-                idTranslationMaps,
-                {
-                    'p:node1': {
-                        sources: [],
-                        sinks: [['p:node1', 1, 'ssp:node1', 1]],
-                    },
-                    'p:node2': {
-                        sources: [['ssp:node1', 2, 'p:node2', 3]],
-                        sinks: [],
-                    },
-                    'ssp:node1': {
-                        sources: [['p:node1', 1, 'ssp:node1', 1]],
-                        sinks: [['ssp:node1', 2, 'p:node2', 3]],
-                    },
-                }
-            )
+            const expectedGraph: PdDspGraph.Graph = _makeGraph({
+                'p:n1': {
+                    sources: [],
+                    sinks: [['p:n1', 1, 'ssp:n1', 1]],
+                },
+                'p:n2': {
+                    sources: [['ssp:n1', 2, 'p:n2', 3]],
+                    sinks: [],
+                },
+                'ssp:n1': {
+                    sources: [['p:n1', 1, 'ssp:n1', 1]],
+                    sinks: [['ssp:n1', 2, 'p:n2', 3]],
+                },
+            })
             _assertGraphsEqual(graph, expectedGraph)
         })
 
@@ -570,124 +526,121 @@ describe('compile', () => {
                     // Connected nodes
                     p: {
                         nodes: {
-                            'p:node1': pdJsonNodeDefaults('p:node1'),
-                            'p:node2': pdJsonNodeDefaults('p:node2'),
-                            'p:sp': {
-                                ...pdJsonNodeDefaults('p:sp'),
+                            n1: pdJsonNodeDefaults('n1'),
+                            n2: pdJsonNodeDefaults('n2'),
+                            sp: {
+                                ...pdJsonNodeDefaults('sp'),
                                 refId: 'sp',
                             },
-                            'p:node4': pdJsonNodeDefaults('p:node4'),
-                            'p:node5': pdJsonNodeDefaults('p:node5'),
+                            n4: pdJsonNodeDefaults('n4'),
+                            n5: pdJsonNodeDefaults('n5'),
                         },
                         connections: [
                             // Connections from nodes to subpatch
-                            ['p:node1', 0, 'p:sp', 0],
-                            ['p:node1', 0, 'p:sp', 1],
-                            ['p:node2', 0, 'p:sp', 0],
+                            ['n1', 0, 'sp', 0],
+                            ['n1', 0, 'sp', 1],
+                            ['n2', 0, 'sp', 0],
                             // Connections from subpatch to nodes
-                            ['p:sp', 0, 'p:node4', 0],
-                            ['p:sp', 1, 'p:node4', 1],
-                            ['p:sp', 0, 'p:node5', 0],
+                            ['sp', 0, 'n4', 0],
+                            ['sp', 1, 'n4', 1],
+                            ['sp', 0, 'n5', 0],
                         ],
                     },
                     sp: {
                         ...pdJsonPatchDefaults('sp'),
                         nodes: {
-                            'sp:inlet1': pdJsonNodeDefaults('sp:inlet1'),
-                            'sp:inlet2': pdJsonNodeDefaults('sp:inlet2'),
-                            'sp:node1': pdJsonNodeDefaults('sp:node1'),
-                            'sp:node2': pdJsonNodeDefaults('sp:node2'),
-                            'sp:ssp': {
-                                ...pdJsonNodeDefaults('sp:ssp'),
+                            inlet1: pdJsonNodeDefaults('inlet1'),
+                            inlet2: pdJsonNodeDefaults('inlet2'),
+                            n1: pdJsonNodeDefaults('n1'),
+                            n2: pdJsonNodeDefaults('n2'),
+                            ssp: {
+                                ...pdJsonNodeDefaults('ssp'),
                                 refId: 'ssp',
                             },
-                            'sp:outlet1': pdJsonNodeDefaults('sp:outlet1'),
-                            'sp:outlet2': pdJsonNodeDefaults('sp:outlet2'),
+                            outlet1: pdJsonNodeDefaults('outlet1'),
+                            outlet2: pdJsonNodeDefaults('outlet2'),
                         },
                         connections: [
                             // inlets to nodes
-                            ['sp:inlet1', 0, 'sp:node1', 0],
-                            ['sp:inlet2', 0, 'sp:node2', 3],
+                            ['inlet1', 0, 'n1', 0],
+                            ['inlet2', 0, 'n2', 3],
                             // connections to subsubpatch
-                            ['sp:inlet2', 0, 'sp:ssp', 0],
+                            ['inlet2', 0, 'ssp', 0],
                             // Outlets to nodes
-                            ['sp:node1', 1, 'sp:outlet1', 0],
-                            ['sp:node2', 1, 'sp:outlet1', 0],
+                            ['n1', 1, 'outlet1', 0],
+                            ['n2', 1, 'outlet1', 0],
                         ],
-                        inlets: ['sp:inlet1', 'sp:inlet2'],
-                        outlets: ['sp:outlet1', 'sp:outlet2'],
+                        inlets: ['inlet1', 'inlet2'],
+                        outlets: ['outlet1', 'outlet2'],
                     },
                     ssp: {
                         ...pdJsonPatchDefaults('ssp'),
                         nodes: {
-                            'ssp:inlet1': pdJsonNodeDefaults('ssp:inlet1'),
-                            'ssp:node1': pdJsonNodeDefaults('ssp:node1'),
+                            inlet1: pdJsonNodeDefaults('inlet1'),
+                            n1: pdJsonNodeDefaults('n1'),
                         },
-                        connections: [['ssp:inlet1', 0, 'ssp:node1', 3]],
-                        inlets: ['ssp:inlet1'],
+                        connections: [['inlet1', 0, 'n1', 3]],
+                        inlets: ['inlet1'],
                     },
                 },
             })
 
-            const [graph, idTranslationMaps] = buildGraph(pd)
-            flattenGraph(pd, graph, idTranslationMaps)
+            const graph = buildGraph(pd)
+            flattenGraph(pd, graph)
 
-            const expectedGraph: PdDspGraph.Graph = _makeGraph(
-                idTranslationMaps,
-                {
-                    'p:node1': {
-                        sources: [],
-                        sinks: [
-                            ['p:node1', 0, 'sp:node1', 0],
-                            ['p:node1', 0, 'sp:node2', 3],
-                            ['p:node1', 0, 'ssp:node1', 3],
-                        ],
-                    },
-                    'p:node2': {
-                        sources: [],
-                        sinks: [['p:node2', 0, 'sp:node1', 0]],
-                    },
-                    // Subpatch
-                    'sp:node1': {
-                        sources: [
-                            ['p:node1', 0, 'sp:node1', 0],
-                            ['p:node2', 0, 'sp:node1', 0],
-                        ],
-                        sinks: [
-                            ['sp:node1', 1, 'p:node4', 0],
-                            ['sp:node1', 1, 'p:node5', 0],
-                        ],
-                    },
-                    'sp:node2': {
-                        sources: [['p:node1', 0, 'sp:node2', 3]],
-                        sinks: [
-                            ['sp:node2', 1, 'p:node4', 0],
-                            ['sp:node2', 1, 'p:node5', 0],
-                        ],
-                    },
-                    // Sub-subpatch
-                    'ssp:node1': {
-                        sources: [['p:node1', 0, 'ssp:node1', 3]],
-                        sinks: [],
-                    },
-                    // Sub-subpatch : END
-                    // Subpatch : END
-                    'p:node4': {
-                        sources: [
-                            ['sp:node1', 1, 'p:node4', 0],
-                            ['sp:node2', 1, 'p:node4', 0],
-                        ],
-                        sinks: [],
-                    },
-                    'p:node5': {
-                        sources: [
-                            ['sp:node1', 1, 'p:node5', 0],
-                            ['sp:node2', 1, 'p:node5', 0],
-                        ],
-                        sinks: [],
-                    },
-                }
-            )
+            const expectedGraph: PdDspGraph.Graph = _makeGraph({
+                'p:n1': {
+                    sources: [],
+                    sinks: [
+                        ['p:n1', 0, 'sp:n1', 0],
+                        ['p:n1', 0, 'sp:n2', 3],
+                        ['p:n1', 0, 'ssp:n1', 3],
+                    ],
+                },
+                'p:n2': {
+                    sources: [],
+                    sinks: [['p:n2', 0, 'sp:n1', 0]],
+                },
+                // Subpatch
+                'sp:n1': {
+                    sources: [
+                        ['p:n1', 0, 'sp:n1', 0],
+                        ['p:n2', 0, 'sp:n1', 0],
+                    ],
+                    sinks: [
+                        ['sp:n1', 1, 'p:n4', 0],
+                        ['sp:n1', 1, 'p:n5', 0],
+                    ],
+                },
+                'sp:n2': {
+                    sources: [['p:n1', 0, 'sp:n2', 3]],
+                    sinks: [
+                        ['sp:n2', 1, 'p:n4', 0],
+                        ['sp:n2', 1, 'p:n5', 0],
+                    ],
+                },
+                // Sub-subpatch
+                'ssp:n1': {
+                    sources: [['p:n1', 0, 'ssp:n1', 3]],
+                    sinks: [],
+                },
+                // Sub-subpatch : END
+                // Subpatch : END
+                'p:n4': {
+                    sources: [
+                        ['sp:n1', 1, 'p:n4', 0],
+                        ['sp:n2', 1, 'p:n4', 0],
+                    ],
+                    sinks: [],
+                },
+                'p:n5': {
+                    sources: [
+                        ['sp:n1', 1, 'p:n5', 0],
+                        ['sp:n2', 1, 'p:n5', 0],
+                    ],
+                    sinks: [],
+                },
+            })
 
             _assertGraphsEqual(graph, expectedGraph)
         })
