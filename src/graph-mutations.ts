@@ -9,6 +9,7 @@
  *
  */
 import remove from 'lodash.remove'
+import { getSinks } from './graph-helpers'
 
 export const ensureNode = (
     graph: PdDspGraph.Graph,
@@ -19,8 +20,8 @@ export const ensureNode = (
         graph[nodeId] = {
             id: nodeId,
             proto: jsonNode.proto,
-            sinks: [],
-            sources: [],
+            sinks: {},
+            sources: {},
         }
     }
     return graph[nodeId]
@@ -31,21 +32,15 @@ export const connect = (
     sourceAddress: PdDspGraph.PortletAddress,
     sinkAddress: PdDspGraph.PortletAddress
 ): void => {
-    const source = graph[sourceAddress.id]
-    const sink = graph[sinkAddress.id]
-    const connection = {
-        source: sourceAddress,
-        sink: sinkAddress,
-    }
-    // Avoid duplicate connections : we check only once,
+    // Avoid duplicate connections : we check only on sinks,
     // because we assume that connections are always consistent on both sides.
     if (
-        !source.sinks.some((otherConnection) =>
-            _connectionsEqual(connection, otherConnection)
+        !getSinks(graph, sourceAddress.id, sinkAddress.portlet).some((otherSinkAddress) =>
+            _portletAddressesEqual(sinkAddress, otherSinkAddress)
         )
     ) {
-        source.sinks.push(connection)
-        sink.sources.push(connection)
+        _ensurePortletAddressArray(graph[sourceAddress.id].sinks, sourceAddress.portlet).push(sinkAddress)
+        _ensurePortletAddressArray(graph[sinkAddress.id].sources, sinkAddress.portlet).push(sourceAddress)
     }
 }
 
@@ -54,15 +49,17 @@ export const disconnectNodes = (
     sourceNodeId: PdDspGraph.NodeId,
     sinkNodeId: PdDspGraph.NodeId
 ): void => {
-    if (!graph[sourceNodeId] || !graph[sourceNodeId]) {
+    const sourceNode = graph[sourceNodeId]
+    const sinkNode = graph[sinkNodeId]
+    if (!sourceNode || !sinkNode) {
         throw new Error(
             `both '${sourceNodeId}' and '${sinkNodeId}' must exist in graph`
         )
     }
-    const sourceNode = graph[sourceNodeId]
-    const sinkNode = graph[sinkNodeId]
-    remove(sourceNode.sinks, ({ sink }) => sink.id === sinkNodeId)
-    remove(sinkNode.sources, ({ source }) => source.id === sourceNodeId)
+    Object.values(sourceNode.sinks).forEach(
+        sinkAddresses => remove(sinkAddresses, (sinkAddress) => sinkAddress.id === sinkNodeId))
+    Object.values(sinkNode.sources).forEach(
+        sourceAddresses => remove(sourceAddresses, (sourceAddress) => sourceAddress.id === sourceNodeId))
 }
 
 export const deleteNode = (
@@ -73,23 +70,28 @@ export const deleteNode = (
     if (!node) {
         return
     }
-    // `slice` is required here because we change the list while iterating
-    node.sources
-        .slice(0)
-        .forEach((connection) =>
-            disconnectNodes(graph, connection.source.id, nodeId)
+
+    // `slice(0)` because array might change during iteration
+    Object.values(node.sources)
+        .forEach((sourceAddresses) =>
+            sourceAddresses.slice(0).forEach(
+                (sourceAddress) => disconnectNodes(graph, sourceAddress.id, nodeId))
         )
-    node.sinks.slice(0).forEach((connection) => {
-        disconnectNodes(graph, nodeId, connection.sink.id)
-    })
+    Object.values(node.sinks)
+        .forEach((sinkAddresses) =>
+            sinkAddresses.slice(0).forEach(
+                (sinkAddress) => disconnectNodes(graph, nodeId, sinkAddress.id))
+        )
+
     delete graph[nodeId]
 }
 
-const _connectionsEqual = (
-    c1: PdDspGraph.Connection,
-    c2: PdDspGraph.Connection
+const _portletAddressesEqual = (
+    a1: PdDspGraph.PortletAddress,
+    a2: PdDspGraph.PortletAddress
 ): boolean =>
-    c1.sink.portlet === c2.sink.portlet &&
-    c1.sink.id === c2.sink.id &&
-    c1.source.portlet === c2.source.portlet &&
-    c1.source.id === c2.source.id
+    a1.portlet === a2.portlet &&
+    a1.id === a2.id
+
+const _ensurePortletAddressArray = (portletMap: PdDspGraph.PortletAddressMap, portletId: PdDspGraph.PortletId) =>
+    portletMap[portletId] = portletMap[portletId] || []

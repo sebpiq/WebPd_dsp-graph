@@ -37,6 +37,6 @@ export const nodeDefaults = (
 ): PdDspGraph.Node => ({
     id,
     proto,
-    sources: [],
-    sinks: [],
+    sources: {},
+    sinks: {},
 })

@@ -25,27 +25,31 @@ import {
 } from './test-helpers'
 import { getReferencesToSubpatch } from './pdjson-helpers'
 
-type ConciseConnection = [
+type ConcisePdConnection = [
     PdDspGraph.NodeId,
     PdDspGraph.PortletId,
     PdDspGraph.NodeId,
     PdDspGraph.PortletId
 ]
+type ConcisePortletAddress = [
+    PdDspGraph.NodeId,
+    PdDspGraph.PortletId,
+]
 type ConcisePatch = Partial<Omit<PdJson.Patch, 'connections'>> & {
     nodes: { [localId: string]: PdJson.Node }
-    connections: Array<ConciseConnection>
+    connections: Array<ConcisePdConnection>
 }
 type ConcisePd = { patches: { [patchId: string]: ConcisePatch } }
 type ConciseGraph = {
     [pdNodeId: string]: {
-        sinks?: Array<ConciseConnection>
-        sources?: Array<ConciseConnection>
+        sinks?: {[outletId: number]: Array<ConcisePortletAddress>}
+        sources?: {[inletId: number]: Array<ConcisePortletAddress>}
     }
 }
 
 const _makeConnection = (
-    conciseConnection: ConciseConnection
-): PdDspGraph.Connection => ({
+    conciseConnection: ConcisePdConnection
+): PdJson.Connection => ({
     source: {
         id: conciseConnection[0],
         portlet: conciseConnection[1],
@@ -54,6 +58,13 @@ const _makeConnection = (
         id: conciseConnection[2],
         portlet: conciseConnection[3],
     },
+})
+
+const _makePortletAddress = (
+    conciseAddress: ConcisePortletAddress
+): PdDspGraph.PortletAddress => ({
+        id: conciseAddress[0],
+        portlet: conciseAddress[1],
 })
 
 const _makePd = (concisePd: ConcisePd): PdJson.Pd => {
@@ -71,31 +82,22 @@ const _makePd = (concisePd: ConcisePd): PdJson.Pd => {
 }
 
 const _makeGraph = (conciseGraph: ConciseGraph): PdDspGraph.Graph => {
-    const _makeConnection = (
-        conciseConnection: ConciseConnection
-    ): PdDspGraph.Connection => ({
-        source: {
-            id: conciseConnection[0],
-            portlet: conciseConnection[1],
-        },
-        sink: {
-            id: conciseConnection[2],
-            portlet: conciseConnection[3],
-        },
-    })
-
     const graph: PdDspGraph.Graph = {}
     Object.entries(conciseGraph).forEach(([nodeId, partialNode]) => {
-        partialNode.sources = partialNode.sources || []
-        partialNode.sinks = partialNode.sinks || []
+        partialNode.sources = partialNode.sources || {}
+        partialNode.sinks = partialNode.sinks || {}
+        const sources: PdDspGraph.Node["sources"] = {}
+        const sinks: PdDspGraph.Node["sinks"] = {}
+        Object.entries(partialNode.sources).forEach(([inletId, portletAddresses]) => {
+            sources[parseFloat(inletId)] = portletAddresses.map(_makePortletAddress)
+        })
+        Object.entries(partialNode.sinks).forEach(([outletId, portletAddresses]) => {
+            sinks[parseFloat(outletId)] = portletAddresses.map(_makePortletAddress)
+        })
         graph[nodeId] = {
             ...nodeDefaults(nodeId),
-            sources: partialNode.sources.map((conciseConnection) =>
-                _makeConnection(conciseConnection)
-            ),
-            sinks: partialNode.sinks.map((conciseConnection) =>
-                _makeConnection(conciseConnection)
-            ),
+            sources,
+            sinks,
         }
     })
     return graph
@@ -139,28 +141,28 @@ describe('compile', () => {
 
             const graph = buildGraph(pd)
 
-            const connection = {
-                source: { id: 'p1:n1', portlet: 0 },
-                sink: { id: 'p1:n2', portlet: 0 },
-            }
             assert.deepEqual(graph, {
                 'p1:n1': {
                     id: 'p1:n1',
                     proto: 'DUMMY',
-                    sources: [],
-                    sinks: [connection],
+                    sources: {},
+                    sinks: {
+                        0: [{ id: 'p1:n2', portlet: 0 }]
+                    },
                 },
                 'p1:n2': {
                     id: 'p1:n2',
                     proto: 'DUMMY',
-                    sources: [connection],
-                    sinks: [],
+                    sources: {
+                        0: [{ id: 'p1:n1', portlet: 0 }]
+                    },
+                    sinks: {},
                 },
                 'p2:n1': {
                     id: 'p2:n1',
                     proto: 'DUMMY',
-                    sinks: [],
-                    sources: [],
+                    sinks: {},
+                    sources: {},
                 },
             })
         })
@@ -218,34 +220,38 @@ describe('compile', () => {
 
                 const expectedGraph = _makeGraph({
                     'p:n1': {
-                        sinks: [
-                            ['p:n1', 0, 'p:sp', 0],
-                            ['p:n1', 0, 'p:sp', 1],
-                            ['p:n1', 0, 'sp:n1', 0],
-                            ['p:n1', 0, 'sp:n2', 3],
-                        ],
+                        sinks: {
+                            0: [
+                                ['p:sp', 0],
+                                ['p:sp', 1],
+                                ['sp:n1', 0],
+                                ['sp:n2', 3],
+                            ]
+                        },
                     },
                     'p:n2': {
-                        sinks: [
-                            ['p:n2', 0, 'p:sp', 0],
-                            ['p:n2', 0, 'sp:n1', 0],
-                        ],
+                        sinks:{ 0: [
+                            ['p:sp', 0],
+                            ['sp:n1', 0],
+                        ]},
                     },
                     'p:sp': {
-                        sources: [
-                            ['p:n1', 0, 'p:sp', 0],
-                            ['p:n1', 0, 'p:sp', 1],
-                            ['p:n2', 0, 'p:sp', 0],
-                        ],
+                        sources: {0: [
+                            ['p:n1', 0],
+                            ['p:n2', 0],
+                        ], 1: [
+                            ['p:n1', 0],
+
+                        ]},
                     },
                     'sp:n1': {
-                        sources: [
-                            ['p:n1', 0, 'sp:n1', 0],
-                            ['p:n2', 0, 'sp:n1', 0],
-                        ],
+                        sources: {0: [
+                            ['p:n1', 0],
+                            ['p:n2', 0],
+                        ]},
                     },
                     'sp:n2': {
-                        sources: [['p:n1', 0, 'sp:n2', 3]],
+                        sources: {3: [['p:n1', 0]]},
                     },
                 })
 
@@ -309,34 +315,37 @@ describe('compile', () => {
 
                 const expectedGraph = _makeGraph({
                     'sp:n1': {
-                        sinks: [
-                            ['sp:n1', 3, 'p:n1', 0],
-                            ['sp:n1', 3, 'p:n2', 1],
-                        ],
+                        sinks: {3: [
+                            ['p:n1', 0],
+                            ['p:n2', 1],
+                        ]},
                     },
                     'sp:n2': {
-                        sinks: [['sp:n2', 0, 'p:n1', 1]],
+                        sinks: {0: [['p:n1', 1]]},
                     },
                     'p:sp': {
-                        sinks: [
-                            ['p:sp', 0, 'p:n1', 0],
-                            ['p:sp', 1, 'p:n1', 1],
-                            ['p:sp', 0, 'p:n2', 1],
-                        ],
+                        sinks: {0: [
+                            ['p:n1', 0],
+                            ['p:n2', 1],
+                        ], 
+                        1: [
+                            ['p:n1', 1],
+                        ]
+                        },
                     },
                     'p:n1': {
-                        sources: [
-                            ['p:sp', 0, 'p:n1', 0],
-                            ['p:sp', 1, 'p:n1', 1],
-                            ['sp:n1', 3, 'p:n1', 0],
-                            ['sp:n2', 0, 'p:n1', 1],
-                        ],
+                        sources: {0: [
+                            ['p:sp', 0],
+                            ['sp:n1', 3],
+                        ], 1: [
+                            ['p:sp', 1],
+                            ['sp:n2', 0],                        ]},
                     },
                     'p:n2': {
-                        sources: [
-                            ['p:sp', 0, 'p:n2', 1],
-                            ['sp:n1', 3, 'p:n2', 1],
-                        ],
+                        sources: {1: [
+                            ['p:sp', 0],
+                            ['sp:n1', 3],
+                        ]},
                     },
                 })
                 _assertGraphsEqual(graph, expectedGraph)
@@ -384,20 +393,18 @@ describe('compile', () => {
 
                 const expectedGraph: PdDspGraph.Graph = _makeGraph({
                     'p:n1': {
-                        sources: [],
-                        sinks: [['p:n1', 2, 'sp:n1', 1]],
+                        sinks: {2: [['sp:n1', 1]]},
                     },
                     'sp:n1': {
-                        sources: [['p:n1', 2, 'sp:n1', 1]],
-                        sinks: [['sp:n1', 3, 'p:n2', 1]],
+                        sources: {1: [['p:n1', 2]]},
+                        sinks: {3: [['p:n2', 1]]},
                     },
                     'p:n2': {
-                        sources: [['sp:n1', 3, 'p:n2', 1]],
-                        sinks: [['p:n2', 0, 'p:n3', 1]],
+                        sources: {1: [['sp:n1', 3]]},
+                        sinks: {0: [['p:n3', 1]]},
                     },
                     'p:n3': {
-                        sources: [['p:n2', 0, 'p:n3', 1]],
-                        sinks: [],
+                        sources: {1: [['p:n2', 0]]},
                     },
                 })
                 _assertGraphsEqual(graph, expectedGraph)
@@ -437,12 +444,10 @@ describe('compile', () => {
 
                 const expectedGraph: PdDspGraph.Graph = _makeGraph({
                     'p:n1': {
-                        sources: [],
-                        sinks: [['p:n1', 1, 'p:n2', 1]],
+                        sinks: {1: [['p:n2', 1]]},
                     },
                     'p:n2': {
-                        sources: [['p:n1', 1, 'p:n2', 1]],
-                        sinks: [],
+                        sources: {1: [['p:n1', 1]]},
                     },
                 })
                 _assertGraphsEqual(graph, expectedGraph)
@@ -505,16 +510,14 @@ describe('compile', () => {
 
             const expectedGraph: PdDspGraph.Graph = _makeGraph({
                 'p:n1': {
-                    sources: [],
-                    sinks: [['p:n1', 1, 'ssp:n1', 1]],
+                    sinks: {1: [['ssp:n1', 1]]},
                 },
                 'p:n2': {
-                    sources: [['ssp:n1', 2, 'p:n2', 3]],
-                    sinks: [],
+                    sources: {3: [['ssp:n1', 2]]},
                 },
                 'ssp:n1': {
-                    sources: [['p:n1', 1, 'ssp:n1', 1]],
-                    sinks: [['ssp:n1', 2, 'p:n2', 3]],
+                    sources: {1: [['p:n1', 1]]},
+                    sinks: {2: [['p:n2', 3]]},
                 },
             })
             _assertGraphsEqual(graph, expectedGraph)
@@ -591,54 +594,50 @@ describe('compile', () => {
             const expectedGraph: PdDspGraph.Graph = _makeGraph({
                 'p:n1': {
                     sources: [],
-                    sinks: [
-                        ['p:n1', 0, 'sp:n1', 0],
-                        ['p:n1', 0, 'sp:n2', 3],
-                        ['p:n1', 0, 'ssp:n1', 3],
-                    ],
+                    sinks: {0: [
+                        ['sp:n1', 0],
+                        ['sp:n2', 3],
+                        ['ssp:n1', 3],
+                    ]},
                 },
                 'p:n2': {
-                    sources: [],
-                    sinks: [['p:n2', 0, 'sp:n1', 0]],
+                    sinks: {0: [['sp:n1', 0]]},
                 },
                 // Subpatch
                 'sp:n1': {
-                    sources: [
-                        ['p:n1', 0, 'sp:n1', 0],
-                        ['p:n2', 0, 'sp:n1', 0],
-                    ],
-                    sinks: [
-                        ['sp:n1', 1, 'p:n4', 0],
-                        ['sp:n1', 1, 'p:n5', 0],
-                    ],
+                    sources: {0: [
+                        ['p:n1', 0],
+                        ['p:n2', 0],
+                    ]},
+                    sinks: {1: [
+                        ['p:n4', 0],
+                        ['p:n5', 0],
+                    ]},
                 },
                 'sp:n2': {
-                    sources: [['p:n1', 0, 'sp:n2', 3]],
-                    sinks: [
-                        ['sp:n2', 1, 'p:n4', 0],
-                        ['sp:n2', 1, 'p:n5', 0],
-                    ],
+                    sources: {3: [['p:n1', 0]]},
+                    sinks: {1: [
+                        ['p:n4', 0],
+                        ['p:n5', 0],
+                    ]},
                 },
                 // Sub-subpatch
                 'ssp:n1': {
-                    sources: [['p:n1', 0, 'ssp:n1', 3]],
-                    sinks: [],
+                    sources: {3: [['p:n1', 0]]},
                 },
                 // Sub-subpatch : END
                 // Subpatch : END
                 'p:n4': {
-                    sources: [
-                        ['sp:n1', 1, 'p:n4', 0],
-                        ['sp:n2', 1, 'p:n4', 0],
-                    ],
-                    sinks: [],
+                    sources: {0: [
+                        ['sp:n1', 1],
+                        ['sp:n2', 1],
+                    ], 1: []},
                 },
                 'p:n5': {
-                    sources: [
-                        ['sp:n1', 1, 'p:n5', 0],
-                        ['sp:n2', 1, 'p:n5', 0],
-                    ],
-                    sinks: [],
+                    sources: {0: [
+                        ['sp:n1', 1],
+                        ['sp:n2', 1],
+                    ]},
                 },
             })
 

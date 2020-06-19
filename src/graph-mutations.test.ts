@@ -31,8 +31,8 @@ describe('graph-mutations', () => {
                 '1': {
                     id: '1',
                     proto: 'osc~',
-                    sources: [],
-                    sinks: [],
+                    sources: {},
+                    sinks: {},
                 },
             })
         })
@@ -42,8 +42,8 @@ describe('graph-mutations', () => {
                 '1': {
                     id: '1',
                     proto: 'osc~',
-                    sources: [],
-                    sinks: [],
+                    sources: {},
+                    sinks: {},
                 },
             }
             ensureNode(graph, '1', {
@@ -54,8 +54,8 @@ describe('graph-mutations', () => {
             assert.deepEqual(graph['1'], {
                 id: '1',
                 proto: 'osc~',
-                sources: [],
-                sinks: [],
+                sources: {},
+                sinks: {},
             })
         })
     })
@@ -68,24 +68,38 @@ describe('graph-mutations', () => {
             }
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
-            const connection1 = {
-                source: { id: '0', portlet: 0 },
-                sink: { id: '1', portlet: 0 },
-            }
-            assert.deepEqual(graph['0'].sources, [])
-            assert.deepEqual(graph['0'].sinks, [connection1])
-            assert.deepEqual(graph['1'].sources, [connection1])
-            assert.deepEqual(graph['1'].sinks, [])
+
+            assert.deepEqual(graph['0'].sources, {})
+            assert.deepEqual(graph['0'].sinks, {
+                0: [
+                    { id: '1', portlet: 0 },
+                ]
+            })
+            assert.deepEqual(graph['1'].sources, {
+                0: [
+                    { id: '0', portlet: 0 },
+                ]
+            })
+            assert.deepEqual(graph['1'].sinks, {})
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 1 })
-            const connection2 = {
-                source: { id: '0', portlet: 0 },
-                sink: { id: '1', portlet: 1 },
-            }
-            assert.deepEqual(graph['0'].sources, [])
-            assert.deepEqual(graph['0'].sinks, [connection1, connection2])
-            assert.deepEqual(graph['1'].sources, [connection1, connection2])
-            assert.deepEqual(graph['1'].sinks, [])
+
+            assert.deepEqual(graph['0'].sources, {})
+            assert.deepEqual(graph['0'].sinks, {
+                0: [
+                    { id: '1', portlet: 0 },
+                    { id: '1', portlet: 1 }
+                ]
+            })
+            assert.deepEqual(graph['1'].sources, {
+                0: [
+                    { id: '0', portlet: 0 },
+                ],
+                1: [
+                    { id: '0', portlet: 0 },
+                ]
+            })
+            assert.deepEqual(graph['1'].sinks, {})
         })
 
         it('should not add a connection if it already exists', () => {
@@ -95,12 +109,30 @@ describe('graph-mutations', () => {
             }
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
-            const connection1 = graph['0'].sinks[0]
-            assert.deepEqual(graph['0'].sinks, [connection1])
-            assert.deepEqual(graph['1'].sources, [connection1])
+
+            assert.deepEqual(graph['0'].sinks, {
+                0: [
+                    { id: '1', portlet: 0 },
+                ]
+            })
+            assert.deepEqual(graph['1'].sources, {
+                0: [
+                    { id: '0', portlet: 0 },
+                ]
+            })
+
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
-            assert.deepEqual(graph['0'].sinks, [connection1])
-            assert.deepEqual(graph['1'].sources, [connection1])
+
+            assert.deepEqual(graph['0'].sinks, {
+                0: [
+                    { id: '1', portlet: 0 },
+                ]
+            })
+            assert.deepEqual(graph['1'].sources, {
+                0: [
+                    { id: '0', portlet: 0 },
+                ]
+            })
         })
     })
 
@@ -116,18 +148,18 @@ describe('graph-mutations', () => {
             connect(graph, { id: '0', portlet: 0 }, { id: '2', portlet: 1 })
             connect(graph, { id: '1', portlet: 0 }, { id: '2', portlet: 0 })
 
-            assert.equal(graph['0'].sinks.length, 2)
-            assert.equal(graph['2'].sources.length, 3)
+            assert.equal(graph['0'].sinks[0].length, 2)
+            assert.equal(graph['2'].sources[0].length, 2)
+            assert.equal(graph['2'].sources[1].length, 1)
 
             disconnectNodes(graph, '0', '2')
-            assert.equal(graph['0'].sinks.length, 0)
-            assert.equal(graph['2'].sources.length, 1)
-            assert.deepEqual(graph['2'].sources, [
-                {
-                    source: { id: '1', portlet: 0 },
-                    sink: { id: '2', portlet: 0 },
-                },
-            ])
+            assert.equal(graph['0'].sinks[0].length, 0)
+            assert.equal(graph['2'].sources[0].length, 1)
+            assert.equal(graph['2'].sources[1].length, 0)
+            assert.deepEqual(graph['2'].sources, {
+                0: [{ id: '1', portlet: 0 }],
+                1: []
+            })
         })
     })
 
@@ -141,19 +173,18 @@ describe('graph-mutations', () => {
 
             connect(graph, { id: '0', portlet: 0 }, { id: '2', portlet: 0 })
             connect(graph, { id: '1', portlet: 0 }, { id: '2', portlet: 0 })
-            assert.equal(graph['0'].sinks.length, 1)
-            assert.equal(graph['1'].sinks.length, 1)
-            assert.equal(graph['2'].sources.length, 2)
+            assert.equal(graph['0'].sinks[0].length, 1)
+            assert.equal(graph['1'].sinks[0].length, 1)
+            assert.equal(graph['2'].sources[0].length, 2)
 
             deleteNode(graph, '1')
             assert.deepEqual(Object.keys(graph), ['0', '2'])
-            assert.equal(graph['0'].sinks.length, 1)
-            assert.deepEqual(graph['2'].sources, [
-                {
-                    source: { id: '0', portlet: 0 },
-                    sink: { id: '2', portlet: 0 },
-                },
-            ])
+            assert.equal(graph['0'].sinks[0].length, 1)
+            assert.deepEqual(graph['2'].sources, {
+                [0]: [
+                    { id: '0', portlet: 0 }
+                ],
+            })
         })
 
         it('should work fine when several source / sinks', () => {
@@ -165,14 +196,14 @@ describe('graph-mutations', () => {
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
             connect(graph, { id: '0', portlet: 0 }, { id: '2', portlet: 1 })
-            assert.equal(graph['0'].sinks.length, 2)
-            assert.equal(graph['1'].sources.length, 1)
-            assert.equal(graph['2'].sources.length, 1)
+            assert.equal(graph['0'].sinks[0].length, 2)
+            assert.equal(graph['1'].sources[0].length, 1)
+            assert.equal(graph['2'].sources[1].length, 1)
 
             deleteNode(graph, '0')
             assert.deepEqual(Object.keys(graph), ['1', '2'])
-            assert.equal(graph['1'].sources.length, 0)
-            assert.equal(graph['2'].sources.length, 0)
+            assert.equal(graph['1'].sources[0].length, 0)
+            assert.equal(graph['2'].sources[1].length, 0)
         })
     })
 })
