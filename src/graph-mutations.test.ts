@@ -71,14 +71,10 @@ describe('graph-mutations', () => {
 
             assert.deepEqual(graph['0'].sources, {})
             assert.deepEqual(graph['0'].sinks, {
-                0: [
-                    { id: '1', portlet: 0 },
-                ]
+                0: [{ id: '1', portlet: 0 }],
             })
             assert.deepEqual(graph['1'].sources, {
-                0: [
-                    { id: '0', portlet: 0 },
-                ]
+                0: [{ id: '0', portlet: 0 }],
             })
             assert.deepEqual(graph['1'].sinks, {})
 
@@ -88,16 +84,12 @@ describe('graph-mutations', () => {
             assert.deepEqual(graph['0'].sinks, {
                 0: [
                     { id: '1', portlet: 0 },
-                    { id: '1', portlet: 1 }
-                ]
+                    { id: '1', portlet: 1 },
+                ],
             })
             assert.deepEqual(graph['1'].sources, {
-                0: [
-                    { id: '0', portlet: 0 },
-                ],
-                1: [
-                    { id: '0', portlet: 0 },
-                ]
+                0: [{ id: '0', portlet: 0 }],
+                1: [{ id: '0', portlet: 0 }],
             })
             assert.deepEqual(graph['1'].sinks, {})
         })
@@ -111,27 +103,19 @@ describe('graph-mutations', () => {
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
 
             assert.deepEqual(graph['0'].sinks, {
-                0: [
-                    { id: '1', portlet: 0 },
-                ]
+                0: [{ id: '1', portlet: 0 }],
             })
             assert.deepEqual(graph['1'].sources, {
-                0: [
-                    { id: '0', portlet: 0 },
-                ]
+                0: [{ id: '0', portlet: 0 }],
             })
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
 
             assert.deepEqual(graph['0'].sinks, {
-                0: [
-                    { id: '1', portlet: 0 },
-                ]
+                0: [{ id: '1', portlet: 0 }],
             })
             assert.deepEqual(graph['1'].sources, {
-                0: [
-                    { id: '0', portlet: 0 },
-                ]
+                0: [{ id: '0', portlet: 0 }],
             })
         })
     })
@@ -158,7 +142,7 @@ describe('graph-mutations', () => {
             assert.equal(graph['2'].sources[1].length, 0)
             assert.deepEqual(graph['2'].sources, {
                 0: [{ id: '1', portlet: 0 }],
-                1: []
+                1: [],
             })
         })
     })
@@ -181,9 +165,7 @@ describe('graph-mutations', () => {
             assert.deepEqual(Object.keys(graph), ['0', '2'])
             assert.equal(graph['0'].sinks[0].length, 1)
             assert.deepEqual(graph['2'].sources, {
-                [0]: [
-                    { id: '0', portlet: 0 }
-                ],
+                [0]: [{ id: '0', portlet: 0 }],
             })
         })
 

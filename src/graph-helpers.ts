@@ -12,12 +12,10 @@ export const getSinks = (
     graph: PdDspGraph.Graph,
     nodeId: PdDspGraph.NodeId,
     outlet: PdDspGraph.PortletId
-): Array<PdDspGraph.PortletAddress> =>
-    graph[nodeId].sinks[outlet] || []
+): Array<PdDspGraph.PortletAddress> => graph[nodeId].sinks[outlet] || []
 
 export const getSources = (
     graph: PdDspGraph.Graph,
     nodeId: PdDspGraph.NodeId,
     inlet: PdDspGraph.PortletId
-): Array<PdDspGraph.PortletAddress> =>
-    graph[nodeId].sources[inlet] || []
+): Array<PdDspGraph.PortletAddress> => graph[nodeId].sources[inlet] || []
