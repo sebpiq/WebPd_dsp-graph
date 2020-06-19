@@ -1,14 +1,10 @@
-import assert from "assert"
-import { getSinks, getSources } from "./graph-helpers"
-import {nodeDefaults} from './test-helpers'
-
+import assert from 'assert'
+import { getSinks, getSources } from './graph-helpers'
+import { nodeDefaults } from './test-helpers'
 
 describe('graph-helpers', () => {
-
     describe('getSources', () => {
-        
         it('should get sources', () => {
-            
             const connection1 = {
                 source: {
                     id: '0',
@@ -17,7 +13,7 @@ describe('graph-helpers', () => {
                 sink: {
                     id: '4',
                     portlet: 0,
-                }
+                },
             }
             const connection2 = {
                 source: {
@@ -27,7 +23,7 @@ describe('graph-helpers', () => {
                 sink: {
                     id: '1',
                     portlet: 1,
-                }
+                },
             }
             const connection3 = {
                 source: {
@@ -37,7 +33,7 @@ describe('graph-helpers', () => {
                 sink: {
                     id: '4',
                     portlet: 0,
-                }
+                },
             }
             const connection4 = {
                 source: {
@@ -47,31 +43,31 @@ describe('graph-helpers', () => {
                 sink: {
                     id: '4',
                     portlet: 1,
-                }
+                },
             }
 
             const graph: PdDspGraph.Graph = {
-                '0': { 
+                '0': {
                     ...nodeDefaults('0'),
                     sources: [],
                     sinks: [connection1, connection2],
                 },
-                '1': { 
+                '1': {
                     ...nodeDefaults('1'),
                     sources: [connection2],
                     sinks: [connection3],
                 },
-                '2': { 
+                '2': {
                     ...nodeDefaults('2'),
                     sources: [],
                     sinks: [connection4],
                 },
-                '3': { 
+                '3': {
                     ...nodeDefaults('3'),
                     sources: [],
                     sinks: [],
                 },
-                '4': { 
+                '4': {
                     ...nodeDefaults('4'),
                     sources: [connection1, connection3, connection4],
                     sinks: [],
@@ -93,13 +89,11 @@ describe('graph-helpers', () => {
                     portlet: 0,
                 },
             ])
-            
         })
     })
-    
+
     describe('getSinks', () => {
         it('should get sinks', () => {
-            
             const connection1 = {
                 source: {
                     id: '1',
@@ -108,7 +102,7 @@ describe('graph-helpers', () => {
                 sink: {
                     id: '4',
                     portlet: 0,
-                }
+                },
             }
             const connection2 = {
                 source: {
@@ -118,7 +112,7 @@ describe('graph-helpers', () => {
                 sink: {
                     id: '3',
                     portlet: 1,
-                }
+                },
             }
             const connection3 = {
                 source: {
@@ -128,7 +122,7 @@ describe('graph-helpers', () => {
                 sink: {
                     id: '2',
                     portlet: 0,
-                }
+                },
             }
 
             const graph: PdDspGraph.Graph = {
@@ -175,7 +169,6 @@ describe('graph-helpers', () => {
                     portlet: 0,
                 },
             ])
-            
         })
     })
 })
