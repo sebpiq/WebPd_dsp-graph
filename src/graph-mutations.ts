@@ -9,7 +9,17 @@
  *
  */
 import remove from 'lodash.remove'
-import { getSinks } from './graph-helpers'
+import { getSinks, getSources } from './graph-helpers'
+
+export const addNode = (
+    graph: PdDspGraph.Graph,
+    node: PdDspGraph.Node
+): PdDspGraph.Node => {
+    if (!graph[node.id]) {
+        graph[node.id] = node
+    }
+    return node
+}
 
 export const ensureNode = (
     graph: PdDspGraph.Graph,
@@ -38,9 +48,9 @@ export const connect = (
         !getSinks(
             graph,
             sourceAddress.id,
-            sinkAddress.portlet
+            sourceAddress.portlet
         ).some((otherSinkAddress) =>
-            _portletAddressesEqual(sinkAddress, otherSinkAddress)
+            portletAddressesEqual(sinkAddress, otherSinkAddress)
         )
     ) {
         _ensurePortletAddressArray(
@@ -52,6 +62,29 @@ export const connect = (
             sinkAddress.portlet
         ).push(sourceAddress)
     }
+}
+
+export const disconnect = (
+    graph: PdDspGraph.Graph,
+    sourceAddress: PdDspGraph.PortletAddress,
+    sinkAddress: PdDspGraph.PortletAddress
+): void => {
+    const sinkAddresses = getSinks(
+        graph,
+        sourceAddress.id,
+        sourceAddress.portlet
+    )
+    const sourceAddresses = getSources(
+        graph,
+        sinkAddress.id,
+        sinkAddress.portlet
+    )
+    remove(sinkAddresses, (otherSinkAddress) =>
+        portletAddressesEqual(sinkAddress, otherSinkAddress)
+    )
+    remove(sourceAddresses, (otherSourceAddress) =>
+        portletAddressesEqual(sourceAddress, otherSourceAddress)
+    )
 }
 
 export const disconnectNodes = (
@@ -105,7 +138,7 @@ export const deleteNode = (
     delete graph[nodeId]
 }
 
-const _portletAddressesEqual = (
+export const portletAddressesEqual = (
     a1: PdDspGraph.PortletAddress,
     a2: PdDspGraph.PortletAddress
 ): boolean => a1.portlet === a2.portlet && a1.id === a2.id

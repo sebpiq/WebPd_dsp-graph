@@ -10,59 +10,119 @@
  */
 
 import * as graphMutations from './graph-mutations'
+// import PdJson from '@webpd/shared/types/PdJson'
 import { getReferencesToSubpatch, ReferencesToSubpatch } from './pdjson-helpers'
 import { getSources, getSinks } from './graph-helpers'
+import { portletAddressesEqual } from './graph-mutations'
+import partition from 'lodash.partition'
+import { Compilation } from './compilation'
 
-export default (pd: PdJson.Pd): PdDspGraph.Graph => {
-    const graph = buildGraph(pd)
-    flattenGraph(pd, graph)
-    return graph
-}
-
-export const buildGraphNodeId = (
-    patchId: PdJson.ObjectGlobalId,
-    nodeId: PdJson.ObjectLocalId
-): PdDspGraph.NodeId => `${patchId}:${nodeId}`
+// export default (pd: PdJson.Pd): PdDspGraph.Graph => {
+//     const compilation = new Compilation(pd)
+//     buildGraph(compilation)
+//     flattenGraph(compilation)
+//     return compilation.graph
+// }
 
 // Given the base structure of a `pd` object, convert the explicit connections into our graph format.
-export const buildGraph = (pd: PdJson.Pd): PdDspGraph.Graph => {
-    const graph: PdDspGraph.Graph = {}
+export const buildGraph = (compilation: Compilation): void => {
+    const { pd, graph } = compilation
 
     Object.values(pd.patches).forEach((patch) => {
         Object.values(patch.nodes).forEach((pdNode) => {
-            const graphNodeId = buildGraphNodeId(patch.id, pdNode.id)
+            const graphNodeId = compilation.buildGraphNodeId(
+                patch.id,
+                pdNode.id
+            )
             graphMutations.ensureNode(graph, graphNodeId, pdNode)
         })
 
-        patch.connections.forEach((patchConnection) => {
-            const graphSourceNodeId = buildGraphNodeId(
-                patch.id,
-                patchConnection.source.id
+        // Convert patch connections to graph connections
+        let connections = patch.connections.map((patchConnection) => [
+            {
+                id: compilation.buildGraphNodeId(
+                    patch.id,
+                    patchConnection.source.id
+                ),
+                portlet: patchConnection.source.portlet,
+            },
+            {
+                id: compilation.buildGraphNodeId(
+                    patch.id,
+                    patchConnection.sink.id
+                ),
+                portlet: patchConnection.sink.portlet,
+            },
+        ])
+        let connectionsToSameSink: typeof connections = []
+
+        while (connections.length) {
+            const someConnection = connections[0]
+            ;[connectionsToSameSink, connections] = partition(
+                connections,
+                (someOtherConnection) =>
+                    portletAddressesEqual(
+                        someConnection[1],
+                        someOtherConnection[1]
+                    )
             )
-            const graphSinkNodeId = buildGraphNodeId(
-                patch.id,
-                patchConnection.sink.id
+
+            _buildGraphConnections(
+                compilation,
+                connectionsToSameSink.map((connection) => connection[0]),
+                someConnection[1]
             )
-            graphMutations.connect(
-                graph,
-                {
-                    id: graphSourceNodeId,
-                    portlet: patchConnection.source.portlet,
-                },
-                {
-                    id: graphSinkNodeId,
-                    portlet: patchConnection.sink.portlet,
-                }
-            )
+        }
+    })
+}
+
+const _buildGraphConnections = (
+    compilation: Compilation,
+    sourceAddresses: Array<PdDspGraph.PortletAddress>,
+    sinkAddress: PdDspGraph.PortletAddress
+): void => {
+    const { graph } = compilation
+    if (sourceAddresses.length === 1) {
+        graphMutations.connect(graph, sourceAddresses[0], sinkAddress)
+        return
+    }
+
+    // Create Mixer node according to sink type
+    let mixerNode: PdDspGraph.Node
+    const sinkType = compilation.getSinkType(sinkAddress)
+    if (sinkType === 'control') {
+        mixerNode = graphMutations.addNode(compilation.graph, {
+            id: compilation.buildMixerNodeId(sinkAddress),
+            proto: 'trigger',
+            sinks: {},
+            sources: {},
+        })
+    } else if (sinkType === 'signal') {
+        mixerNode = graphMutations.addNode(compilation.graph, {
+            id: compilation.buildMixerNodeId(sinkAddress),
+            proto: '+~',
+            sinks: {},
+            sources: {},
+        })
+    } else {
+        throw new Error(`unexpected PdJson.PortletType ${sinkType}`)
+    }
+
+    // Connect all sources to mixer, and mixed output to sink
+    sourceAddresses.forEach((sourceAddress, inlet) => {
+        graphMutations.connect(graph, sourceAddress, {
+            id: mixerNode.id,
+            portlet: inlet,
         })
     })
-    return graph
+    graphMutations.connect(graph, { id: mixerNode.id, portlet: 0 }, sinkAddress)
 }
 
 // Given a pd object, inline all the subpatches into the given `graph`, so that objects indirectly wired through
 // the [inlet] and [outlet] objects of a subpatch are instead directly wired into the same graph. Also, deletes
 // [pd subpatch], [inlet] and [outlet] nodes (tilde or not).
-export const flattenGraph = (pd: PdJson.Pd, graph: PdDspGraph.Graph): void => {
+export const flattenGraph = (compilation: Compilation): void => {
+    const { pd } = compilation
     const patchesToInline = new Set<PdJson.ObjectGlobalId>(
         Object.keys(pd.patches)
     )
@@ -75,7 +135,7 @@ export const flattenGraph = (pd: PdJson.Pd, graph: PdDspGraph.Graph): void => {
             if (hasDependencies) {
                 return
             }
-            _inlineSubpatch(pd, subpatch, graph)
+            _inlineSubpatch(compilation, subpatch)
             patchesToInline.delete(subpatch.id)
         })
     }
@@ -84,32 +144,33 @@ export const flattenGraph = (pd: PdJson.Pd, graph: PdDspGraph.Graph): void => {
 // This inlines a subpatch in all the patches where it is defined.
 // !!! This works only on one level. If the subpatch contains other subpatches they won't be inlined
 export const _inlineSubpatch = (
-    pd: PdJson.Pd,
-    subpatch: PdJson.Patch,
-    graph: PdDspGraph.Graph
+    compilation: Compilation,
+    subpatch: PdJson.Patch
 ): void => {
+    const { pd, graph } = compilation
     const subpatchReferences = getReferencesToSubpatch(pd, subpatch.id)
-    _inlineSubpatchInlets(graph, subpatch, subpatchReferences)
-    _inlineSubpatchOutlets(graph, subpatch, subpatchReferences)
+    _inlineSubpatchInlets(compilation, subpatch, subpatchReferences)
+    _inlineSubpatchOutlets(compilation, subpatch, subpatchReferences)
     subpatchReferences.forEach(([outerPatchId, subpatchNodeId]) =>
         graphMutations.deleteNode(
             graph,
-            buildGraphNodeId(outerPatchId, subpatchNodeId)
+            compilation.buildGraphNodeId(outerPatchId, subpatchNodeId)
         )
     )
 }
 
 export const _inlineSubpatchInlets = (
-    graph: PdDspGraph.Graph,
+    compilation: Compilation,
     subpatch: PdJson.Patch,
     referencesToSubpatch: ReferencesToSubpatch
 ): void => {
+    const { graph } = compilation
     subpatch.inlets.forEach(
         (
             inletNodeId: PdJson.ObjectLocalId,
             subpatchNodeInlet: PdJson.PortletId
         ) => {
-            inletNodeId = buildGraphNodeId(subpatch.id, inletNodeId)
+            inletNodeId = compilation.buildGraphNodeId(subpatch.id, inletNodeId)
             // Sinks are nodes inside the subpatch which receive connections from the [inlet] object.
             const sinkAddresses = getSinks(graph, inletNodeId, 0)
             referencesToSubpatch.forEach(([outerPatchId, subpatchNodeId]) => {
@@ -117,7 +178,7 @@ export const _inlineSubpatchInlets = (
                 // inlet of the [pd subpatch] object.
                 const sourceAddresses = getSources(
                     graph,
-                    buildGraphNodeId(outerPatchId, subpatchNodeId),
+                    compilation.buildGraphNodeId(outerPatchId, subpatchNodeId),
                     subpatchNodeInlet
                 )
                 sourceAddresses.forEach((sourceAddress) =>
@@ -136,16 +197,20 @@ export const _inlineSubpatchInlets = (
 }
 
 export const _inlineSubpatchOutlets = (
-    graph: PdDspGraph.Graph,
+    compilation: Compilation,
     subpatch: PdJson.Patch,
     referencesToSubpatch: ReferencesToSubpatch
 ): void => {
+    const { graph } = compilation
     subpatch.outlets.forEach(
         (
             outletNodeId: PdJson.ObjectLocalId,
             subpatchNodeOutlet: PdJson.PortletId
         ) => {
-            outletNodeId = buildGraphNodeId(subpatch.id, outletNodeId)
+            outletNodeId = compilation.buildGraphNodeId(
+                subpatch.id,
+                outletNodeId
+            )
             // Sources are nodes inside the subpatch which are connected to the [outlet] object.
             const sourceAddresses = getSources(graph, outletNodeId, 0)
             referencesToSubpatch.forEach(([outerPatchId, subpatchNodeId]) => {
@@ -153,7 +218,7 @@ export const _inlineSubpatchOutlets = (
                 // outlet of the [pd subpatch] object.
                 const sinkAddresses = getSinks(
                     graph,
-                    buildGraphNodeId(outerPatchId, subpatchNodeId),
+                    compilation.buildGraphNodeId(outerPatchId, subpatchNodeId),
                     subpatchNodeOutlet
                 )
                 sourceAddresses.forEach((sourceAddress) =>

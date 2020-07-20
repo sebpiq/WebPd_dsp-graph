@@ -22,12 +22,14 @@
   },
   "homepage": "https://github.com/sebpiq/WebPd_dsp-graph#readme",
   "devDependencies": {
+    "@types/lodash.partition": "^4.6.6",
     "@types/lodash.remove": "^4.7.6",
     "@types/mocha": "^7.0.2",
     "@types/node": "^14.0.13",
     "@webpd/shared": "file:../WebPd_shared"
   },
   "dependencies": {
+    "lodash.partition": "^4.6.0",
     "lodash.remove": "^4.7.0"
   }
 }
