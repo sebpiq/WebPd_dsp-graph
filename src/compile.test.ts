@@ -78,7 +78,7 @@ describe('compile', () => {
                     id: 'pd:p1:n2',
                     proto: 'DUMMY',
                     sources: {
-                        0: [{ id: 'pd:p1:n1', portlet: 0 }],
+                        0: { id: 'pd:p1:n1', portlet: 0 },
                     },
                     sinks: {},
                 },
@@ -150,8 +150,8 @@ describe('compile', () => {
             assert.deepEqual(compilation.graph['mixer:pd:p:nodeSink1:0'], {
                 ...nodeDefaults('mixer:pd:p:nodeSink1:0', '+~'),
                 sources: {
-                    0: [{ id: 'pd:p:nodeSource1A', portlet: 0 }],
-                    1: [{ id: 'pd:p:nodeSource1B', portlet: 0 }],
+                    0: { id: 'pd:p:nodeSource1A', portlet: 0 },
+                    1: { id: 'pd:p:nodeSource1B', portlet: 0 },
                 },
                 sinks: {
                     0: [{ id: 'pd:p:nodeSink1', portlet: 0 }],
@@ -160,8 +160,8 @@ describe('compile', () => {
             assert.deepEqual(compilation.graph['mixer:pd:p:nodeSink2:0'], {
                 ...nodeDefaults('mixer:pd:p:nodeSink2:0', 'trigger'),
                 sources: {
-                    0: [{ id: 'pd:p:nodeSource2A', portlet: 0 }],
-                    1: [{ id: 'pd:p:nodeSource2B', portlet: 0 }],
+                    0: { id: 'pd:p:nodeSource2A', portlet: 0 },
+                    1: { id: 'pd:p:nodeSource2B', portlet: 0 },
                 },
                 sinks: {
                     0: [{ id: 'pd:p:nodeSink2', portlet: 0 }],
@@ -231,23 +231,10 @@ describe('compile', () => {
                             ],
                         },
                     },
-                    'pd:p:n2': {
-                        sinks: {},
-                    },
-                    'pd:p:sp': {
-                        sources: {
-                            0: [['pd:p:n1', 0]],
-                            1: [['pd:p:n1', 0]],
-                        },
-                    },
-                    'pd:sp:n1': {
-                        sources: {
-                            0: [['pd:p:n1', 0]],
-                        },
-                    },
-                    'pd:sp:n2': {
-                        sources: { 3: [['pd:p:n1', 0]] },
-                    },
+                    'pd:p:n2': {},
+                    'pd:p:sp': {},
+                    'pd:sp:n1': {},
+                    'pd:sp:n2': {},
                 })
 
                 assertGraphsEqual(compilation.graph, expectedGraph)
@@ -321,37 +308,14 @@ describe('compile', () => {
                     'pd:sp:n2': {
                         sinks: { 0: [['pd:p:n1', 1]] },
                     },
-                    'pd:p:sp': {
-                        sinks: {
-                            0: [
-                                ['pd:p:n1', 0],
-                                ['pd:p:n2', 1],
-                            ],
-                            1: [['pd:p:n1', 1]],
-                        },
-                    },
-                    'pd:p:n1': {
-                        sources: {
-                            0: [
-                                ['pd:p:sp', 0],
-                                ['pd:sp:n1', 3],
-                            ],
-                            1: [
-                                ['pd:p:sp', 1],
-                                ['pd:sp:n2', 0],
-                            ],
-                        },
-                    },
-                    'pd:p:n2': {
-                        sources: {
-                            1: [
-                                ['pd:p:sp', 0],
-                                ['pd:sp:n1', 3],
-                            ],
-                        },
-                    },
+                    'pd:p:n1': {},
+                    'pd:p:n2': {},
                 })
-                assertGraphsEqual(compilation.graph, expectedGraph)
+                
+                // We omit the subpatch node, because at this stage, its outlet connections 
+                // are not relevant anymore.
+                const {"pd:p:sp": trash, ...compilationGraph} = compilation.graph
+                assertGraphsEqual(compilationGraph, expectedGraph)
             })
         })
 
@@ -400,16 +364,12 @@ describe('compile', () => {
                         sinks: { 2: [['pd:sp:n1', 1]] },
                     },
                     'pd:sp:n1': {
-                        sources: { 1: [['pd:p:n1', 2]] },
                         sinks: { 3: [['pd:p:n2', 1]] },
                     },
                     'pd:p:n2': {
-                        sources: { 1: [['pd:sp:n1', 3]] },
                         sinks: { 0: [['pd:p:n3', 1]] },
                     },
-                    'pd:p:n3': {
-                        sources: { 1: [['pd:p:n2', 0]] },
-                    },
+                    'pd:p:n3': {},
                 })
                 assertGraphsEqual(compilation.graph, expectedGraph)
             })
@@ -451,9 +411,7 @@ describe('compile', () => {
                     'pd:p:n1': {
                         sinks: { 1: [['pd:p:n2', 1]] },
                     },
-                    'pd:p:n2': {
-                        sources: { 1: [['pd:p:n1', 1]] },
-                    },
+                    'pd:p:n2': {},
                 })
                 assertGraphsEqual(compilation.graph, expectedGraph)
             })
@@ -518,11 +476,8 @@ describe('compile', () => {
                 'pd:p:n1': {
                     sinks: { 1: [['pd:ssp:n1', 1]] },
                 },
-                'pd:p:n2': {
-                    sources: { 3: [['pd:ssp:n1', 2]] },
-                },
+                'pd:p:n2': {},
                 'pd:ssp:n1': {
-                    sources: { 1: [['pd:p:n1', 1]] },
                     sinks: { 2: [['pd:p:n2', 3]] },
                 },
             })
@@ -597,7 +552,6 @@ describe('compile', () => {
 
             const expectedGraph: PdDspGraph.Graph = makeGraph({
                 'pd:p:n1': {
-                    sources: [],
                     sinks: {
                         0: [
                             ['pd:sp:n1', 0],
@@ -608,9 +562,6 @@ describe('compile', () => {
                 },
                 // Subpatch
                 'pd:sp:n1': {
-                    sources: {
-                        0: [['pd:p:n1', 0]],
-                    },
                     sinks: {
                         1: [
                             ['pd:p:n4', 0],
@@ -619,26 +570,14 @@ describe('compile', () => {
                     },
                 },
                 'pd:sp:n2': {
-                    sources: { 3: [['pd:p:n1', 0]] },
                     sinks: {},
                 },
                 // Sub-subpatch
-                'pd:ssp:n1': {
-                    sources: { 3: [['pd:p:n1', 0]] },
-                },
+                'pd:ssp:n1': {},
                 // Sub-subpatch : END
                 // Subpatch : END
-                'pd:p:n4': {
-                    sources: {
-                        0: [['pd:sp:n1', 1]],
-                        1: [],
-                    },
-                },
-                'pd:p:n5': {
-                    sources: {
-                        0: [['pd:sp:n1', 1]],
-                    },
-                },
+                'pd:p:n4': {},
+                'pd:p:n5': {},
             })
 
             assertGraphsEqual(compilation.graph, expectedGraph)

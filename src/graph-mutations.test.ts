@@ -18,7 +18,7 @@ import {
     disconnect,
     addNode,
 } from './graph-mutations'
-import { nodeDefaults } from './test-helpers'
+import { nodeDefaults, assertGraphConnections, makeGraph } from './test-helpers'
 
 describe('graph-mutations', () => {
     describe('addNode', () => {
@@ -100,205 +100,165 @@ describe('graph-mutations', () => {
     })
 
     describe('connect', () => {
+
         it('should connect nodes that are not yet connected', () => {
-            const graph: PdDspGraph.Graph = {
-                '0': nodeDefaults('0', 'osc~'),
-                '1': nodeDefaults('1', 'dac~'),
-            }
+            const graph: PdDspGraph.Graph = makeGraph({
+                '0': {},
+                '1': {},
+            })
+            assertGraphConnections(graph, [])
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
-
-            assert.deepEqual(graph['0'].sources, {})
-            assert.deepEqual(graph['0'].sinks, {
-                0: [{ id: '1', portlet: 0 }],
-            })
-            assert.deepEqual(graph['1'].sources, {
-                0: [{ id: '0', portlet: 0 }],
-            })
-            assert.deepEqual(graph['1'].sinks, {})
+            assertGraphConnections(graph, [
+                [['0', 0], ['1', 0]]
+            ])
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 1 })
-
-            assert.deepEqual(graph['0'].sources, {})
-            assert.deepEqual(graph['0'].sinks, {
-                0: [
-                    { id: '1', portlet: 0 },
-                    { id: '1', portlet: 1 },
-                ],
-            })
-            assert.deepEqual(graph['1'].sources, {
-                0: [{ id: '0', portlet: 0 }],
-                1: [{ id: '0', portlet: 0 }],
-            })
-            assert.deepEqual(graph['1'].sinks, {})
+            assertGraphConnections(graph, [
+                [['0', 0], ['1', 0]],
+                [['0', 0], ['1', 1]]
+            ])
         })
 
         it('should not add a connection if it already exists', () => {
-            const graph: PdDspGraph.Graph = {
-                '0': nodeDefaults('0', 'osc~'),
-                '1': nodeDefaults('1', 'dac~'),
-            }
-
-            connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
-
-            assert.deepEqual(graph['0'].sinks, {
-                0: [{ id: '1', portlet: 0 }],
-            })
-            assert.deepEqual(graph['1'].sources, {
-                0: [{ id: '0', portlet: 0 }],
+            const graph: PdDspGraph.Graph = makeGraph({
+                '0': {},
+                '1': {},
             })
 
-            connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
+            connect(graph, { id: '0', portlet: 10 }, { id: '1', portlet: 20 })
+            assertGraphConnections(graph, [
+                [['0', 10], ['1', 20]]
+            ])
 
-            assert.deepEqual(graph['0'].sinks, {
-                0: [{ id: '1', portlet: 0 }],
-            })
-            assert.deepEqual(graph['1'].sources, {
-                0: [{ id: '0', portlet: 0 }],
-            })
+            connect(graph, { id: '0', portlet: 10 }, { id: '1', portlet: 20 })
+            assertGraphConnections(graph, [
+                [['0', 10], ['1', 20]]
+            ])
+            // Check that not added twice
+            assert.deepEqual(graph['0'].sinks, {10: [{ id: '1', portlet: 20 }]})
+            assert.deepEqual(graph['1'].sources, {20: { id: '0', portlet: 10 }})
         })
     })
 
     describe('disconnect', () => {
         it('should disconnect nodes that are connected', () => {
-            const graph: PdDspGraph.Graph = {
-                '0': {
-                    ...nodeDefaults('0', 'bla~'),
+            const graph: PdDspGraph.Graph = makeGraph({
+                'n0': {
                     sinks: {
-                        0: [
-                            { id: '1', portlet: 0 },
-                            { id: '1', portlet: 1 },
-                            { id: '2', portlet: 0 },
+                        10: [
+                            ['n1', 21],
+                            ['n2', 22],
                         ],
-                        1: [{ id: '1', portlet: 1 }],
+                        11: [['n1', 23]],
                     },
                 },
-                '1': {
-                    ...nodeDefaults('1', 'bla~'),
-                    sources: {
-                        0: [{ id: '0', portlet: 0 }],
-                        1: [
-                            { id: '0', portlet: 0 },
-                            { id: '0', portlet: 1 },
-                        ],
-                    },
-                },
-                '2': {
-                    ...nodeDefaults('2', 'bla~'),
-                    sources: {
-                        0: [{ id: '0', portlet: 0 }],
-                    },
-                },
-            }
-
-            disconnect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
-
-            assert.deepEqual(graph['0'].sinks[0], [
-                { id: '1', portlet: 1 },
-                { id: '2', portlet: 0 },
+                'n1': {},
+                'n2': {},
+            })
+            assertGraphConnections(graph, [
+                [['n0', 10], ['n1', 21]],
+                [['n0', 10], ['n2', 22]],
+                [['n0', 11], ['n1', 23]],
             ])
-            assert.deepEqual(graph['0'].sinks[1], [{ id: '1', portlet: 1 }])
-            assert.deepEqual(graph['1'].sources[0], [])
-            assert.deepEqual(graph['1'].sources[1], [
-                { id: '0', portlet: 0 },
-                { id: '0', portlet: 1 },
+
+            disconnect(graph, { id: 'n0', portlet: 10 }, { id: 'n2', portlet: 22 })
+            assertGraphConnections(graph, [
+                [['n0', 10], ['n1', 21]],
+                [['n0', 11], ['n1', 23]],
             ])
-            assert.deepEqual(graph['2'].sources[0], [{ id: '0', portlet: 0 }])
+
+            disconnect(graph, { id: 'n0', portlet: 11 }, { id: 'n1', portlet: 23 })
+            assertGraphConnections(graph, [
+                [['n0', 10], ['n1', 21]],
+            ])
         })
 
         it('should do nothing if connection doesnt exist', () => {
-            const graph: PdDspGraph.Graph = {
-                '0': {
-                    ...nodeDefaults('0', 'bla~'),
+            const graph: PdDspGraph.Graph = makeGraph({
+                'n0': {
                     sinks: {
-                        0: [{ id: '1', portlet: 1 }],
+                        0: [['n1', 1]],
                     },
                 },
-                '1': {
-                    ...nodeDefaults('1', 'bla~'),
-                    sources: {
-                        1: [{ id: '0', portlet: 0 }],
-                    },
-                },
-            }
+                'n1': {},
+            })
 
             disconnect(
                 graph,
-                { id: '0', portlet: 111 },
-                { id: '1', portlet: 222 }
+                { id: 'n0', portlet: 111 },
+                { id: 'n1', portlet: 222 }
             )
 
-            assert.deepEqual(graph['0'].sinks[0], [{ id: '1', portlet: 1 }])
-            assert.deepEqual(graph['1'].sources[1], [{ id: '0', portlet: 0 }])
+            assertGraphConnections(graph, [
+                [['n0', 0], ['n1', 1]],
+            ])
         })
     })
 
     describe('disconnectNodes', () => {
         it('should disconnect all portlets from nodes', () => {
-            const graph: PdDspGraph.Graph = {
-                '0': nodeDefaults('0', 'osc~'),
-                '1': nodeDefaults('1', 'phasor~'),
-                '2': nodeDefaults('2', 'dac~'),
-            }
+            const graph: PdDspGraph.Graph = makeGraph({
+                '0': {},
+                '1': {},
+                '2': {},
+            })
 
             connect(graph, { id: '0', portlet: 0 }, { id: '2', portlet: 0 })
-            connect(graph, { id: '0', portlet: 0 }, { id: '2', portlet: 1 })
-            connect(graph, { id: '1', portlet: 0 }, { id: '2', portlet: 0 })
-
-            assert.equal(graph['0'].sinks[0].length, 2)
-            assert.equal(graph['2'].sources[0].length, 2)
-            assert.equal(graph['2'].sources[1].length, 1)
+            connect(graph, { id: '0', portlet: 1 }, { id: '2', portlet: 1 })
+            connect(graph, { id: '1', portlet: 0 }, { id: '2', portlet: 2 })
+            assertGraphConnections(graph, [
+                [['0', 0], ['2', 0]],
+                [['0', 1], ['2', 1]],
+                [['1', 0], ['2', 2]],
+            ])
 
             disconnectNodes(graph, '0', '2')
-            assert.equal(graph['0'].sinks[0].length, 0)
-            assert.equal(graph['2'].sources[0].length, 1)
-            assert.equal(graph['2'].sources[1].length, 0)
-            assert.deepEqual(graph['2'].sources, {
-                0: [{ id: '1', portlet: 0 }],
-                1: [],
-            })
+            assertGraphConnections(graph, [
+                [['1', 0], ['2', 2]],
+            ])
         })
     })
 
     describe('deleteNode', () => {
         it('should remove all connections, and delete node from graph', () => {
-            const graph: PdDspGraph.Graph = {
-                '0': nodeDefaults('0', 'osc~'),
-                '1': nodeDefaults('1', 'phasor~'),
-                '2': nodeDefaults('2', 'dac~'),
-            }
+            const graph: PdDspGraph.Graph = makeGraph({
+                '0': {},
+                '1': {},
+                '2': {},
+            })
 
             connect(graph, { id: '0', portlet: 0 }, { id: '2', portlet: 0 })
-            connect(graph, { id: '1', portlet: 0 }, { id: '2', portlet: 0 })
-            assert.equal(graph['0'].sinks[0].length, 1)
-            assert.equal(graph['1'].sinks[0].length, 1)
-            assert.equal(graph['2'].sources[0].length, 2)
+            connect(graph, { id: '1', portlet: 0 }, { id: '2', portlet: 1 })
+            assertGraphConnections(graph, [
+                [['0', 0], ['2', 0]],
+                [['1', 0], ['2', 1]],
+            ])
 
             deleteNode(graph, '1')
             assert.deepEqual(Object.keys(graph), ['0', '2'])
-            assert.equal(graph['0'].sinks[0].length, 1)
-            assert.deepEqual(graph['2'].sources, {
-                [0]: [{ id: '0', portlet: 0 }],
-            })
+            assertGraphConnections(graph, [
+                [['0', 0], ['2', 0]],
+            ])
         })
 
-        it('should work fine when several source / sinks', () => {
-            const graph: PdDspGraph.Graph = {
-                '0': nodeDefaults('0', 'osc~'),
-                '1': nodeDefaults('1', 'dac~'),
-                '2': nodeDefaults('2', 'writesf~'),
-            }
+        it('should work fine when several sinks', () => {
+            const graph: PdDspGraph.Graph = makeGraph({
+                '0': {},
+                '1': {},
+                '2': {},
+            })
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
             connect(graph, { id: '0', portlet: 0 }, { id: '2', portlet: 1 })
-            assert.equal(graph['0'].sinks[0].length, 2)
-            assert.equal(graph['1'].sources[0].length, 1)
-            assert.equal(graph['2'].sources[1].length, 1)
+            assertGraphConnections(graph, [
+                [['0', 0], ['1', 0]],
+                [['0', 0], ['2', 1]],
+            ])
 
             deleteNode(graph, '0')
             assert.deepEqual(Object.keys(graph), ['1', '2'])
-            assert.equal(graph['1'].sources[0].length, 0)
-            assert.equal(graph['2'].sources[1].length, 0)
+            assertGraphConnections(graph, [])
         })
     })
 })

@@ -9,7 +9,7 @@
  *
  */
 import remove from 'lodash.remove'
-import { getSinks, getSources } from './graph-helpers'
+import { getSinks, portletAddressesEqual, getNode } from './graph-helpers'
 
 export const addNode = (
     graph: PdDspGraph.Graph,
@@ -42,6 +42,8 @@ export const connect = (
     sourceAddress: PdDspGraph.PortletAddress,
     sinkAddress: PdDspGraph.PortletAddress
 ): void => {
+    const sinkNode = getNode(graph, sinkAddress.id)
+    getNode(graph, sourceAddress.id)
     // Avoid duplicate connections : we check only on sinks,
     // because we assume that connections are always consistent on both sides.
     if (
@@ -53,14 +55,11 @@ export const connect = (
             portletAddressesEqual(sinkAddress, otherSinkAddress)
         )
     ) {
+        sinkNode.sources[sinkAddress.portlet] = sourceAddress
         _ensurePortletAddressArray(
             graph[sourceAddress.id].sinks,
             sourceAddress.portlet
         ).push(sinkAddress)
-        _ensurePortletAddressArray(
-            graph[sinkAddress.id].sources,
-            sinkAddress.portlet
-        ).push(sourceAddress)
     }
 }
 
@@ -69,21 +68,16 @@ export const disconnect = (
     sourceAddress: PdDspGraph.PortletAddress,
     sinkAddress: PdDspGraph.PortletAddress
 ): void => {
+    const sinkNode = getNode(graph, sinkAddress.id)
+    delete sinkNode.sources[sinkAddress.portlet]
+
     const sinkAddresses = getSinks(
         graph,
         sourceAddress.id,
         sourceAddress.portlet
     )
-    const sourceAddresses = getSources(
-        graph,
-        sinkAddress.id,
-        sinkAddress.portlet
-    )
     remove(sinkAddresses, (otherSinkAddress) =>
         portletAddressesEqual(sinkAddress, otherSinkAddress)
-    )
-    remove(sourceAddresses, (otherSourceAddress) =>
-        portletAddressesEqual(sourceAddress, otherSourceAddress)
     )
 }
 
@@ -92,21 +86,15 @@ export const disconnectNodes = (
     sourceNodeId: PdDspGraph.NodeId,
     sinkNodeId: PdDspGraph.NodeId
 ): void => {
-    const sourceNode = graph[sourceNodeId]
-    const sinkNode = graph[sinkNodeId]
-    if (!sourceNode || !sinkNode) {
-        throw new Error(
-            `both '${sourceNodeId}' and '${sinkNodeId}' must exist in graph`
-        )
-    }
+    const sourceNode = getNode(graph, sourceNodeId)
+    const sinkNode = getNode(graph, sinkNodeId)
+    Object.entries(sinkNode.sources).forEach(([inlet, sourceAddress]) => {
+        if (sourceAddress.id === sourceNodeId) {
+            delete sinkNode.sources[parseInt(inlet, 10)]
+        }
+    })
     Object.values(sourceNode.sinks).forEach((sinkAddresses) =>
         remove(sinkAddresses, (sinkAddress) => sinkAddress.id === sinkNodeId)
-    )
-    Object.values(sinkNode.sources).forEach((sourceAddresses) =>
-        remove(
-            sourceAddresses,
-            (sourceAddress) => sourceAddress.id === sourceNodeId
-        )
     )
 }
 
@@ -120,12 +108,8 @@ export const deleteNode = (
     }
 
     // `slice(0)` because array might change during iteration
-    Object.values(node.sources).forEach((sourceAddresses) =>
-        sourceAddresses
-            .slice(0)
-            .forEach((sourceAddress) =>
-                disconnectNodes(graph, sourceAddress.id, nodeId)
-            )
+    Object.values(node.sources).forEach((sourceAddress) =>
+        disconnectNodes(graph, sourceAddress.id, nodeId)
     )
     Object.values(node.sinks).forEach((sinkAddresses) =>
         sinkAddresses
@@ -137,11 +121,6 @@ export const deleteNode = (
 
     delete graph[nodeId]
 }
-
-export const portletAddressesEqual = (
-    a1: PdDspGraph.PortletAddress,
-    a2: PdDspGraph.PortletAddress
-): boolean => a1.portlet === a2.portlet && a1.id === a2.id
 
 const _ensurePortletAddressArray = (
     portletMap: PdDspGraph.PortletAddressMap,

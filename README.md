@@ -1,5 +1,14 @@
 See http://puredata.info/docs/developer/PdFileFormat for the Pd file format reference.
 
+
+Differences with pd specification
+------------------------------------
+
+[+~] must support a variable number of inputs
+
+Each input can have only a single source connected to it. 
+
+
 Scripts
 ---------
 

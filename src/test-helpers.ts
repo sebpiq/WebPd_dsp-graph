@@ -10,6 +10,11 @@
  */
 
 import assert from 'assert'
+import { testGraphIntegrity, mapNodeSources, portletAddressesEqual } from './graph-helpers'
+import differenceWith from 'lodash.differencewith'
+
+type GraphConnection = [PdDspGraph.PortletAddress, PdDspGraph.PortletAddress]
+type ConciseGraphConnection = [ConcisePortletAddress, ConcisePortletAddress]
 
 export const pdJsonDefaults = (): PdJson.Pd => ({
     patches: {},
@@ -58,7 +63,6 @@ type ConcisePd = { patches: { [patchId: string]: ConcisePatch } }
 type ConciseGraph = {
     [pdNodeId: string]: {
         sinks?: { [outletId: number]: Array<ConcisePortletAddress> }
-        sources?: { [inletId: number]: Array<ConcisePortletAddress> }
     }
 }
 
@@ -98,31 +102,27 @@ export const makePd = (concisePd: ConcisePd): PdJson.Pd => {
 
 export const makeGraph = (conciseGraph: ConciseGraph): PdDspGraph.Graph => {
     const graph: PdDspGraph.Graph = {}
-    Object.entries(conciseGraph).forEach(([nodeId, partialNode]) => {
-        partialNode.sources = partialNode.sources || {}
-        partialNode.sinks = partialNode.sinks || {}
-        const sources: PdDspGraph.Node['sources'] = {}
-        const sinks: PdDspGraph.Node['sinks'] = {}
-        Object.entries(partialNode.sources).forEach(
-            ([inletId, portletAddresses]) => {
-                sources[parseFloat(inletId)] = portletAddresses.map(
-                    makePortletAddress
-                )
-            }
-        )
-        Object.entries(partialNode.sinks).forEach(
-            ([outletId, portletAddresses]) => {
-                sinks[parseFloat(outletId)] = portletAddresses.map(
-                    makePortletAddress
-                )
-            }
-        )
+    Object.entries(conciseGraph).forEach(([nodeId]) => {
         graph[nodeId] = {
             ...nodeDefaults(nodeId),
-            sources,
-            sinks,
+            sources: {},
+            sinks: {},
         }
     })
+
+    Object.entries(conciseGraph).forEach(([sourceId, partialNode]) => {
+        Object.entries(partialNode.sinks || {}).forEach(
+            ([outletStr, sinkAddresses]) => {
+                const outlet = parseFloat(outletStr)
+                graph[sourceId].sinks[outlet] = []
+                sinkAddresses.forEach(([sinkId, inlet]) => {
+                    graph[sourceId].sinks[outlet].push(makePortletAddress([sinkId, inlet]))
+                    graph[sinkId].sources[inlet] = makePortletAddress([sourceId, outlet])
+                })
+            }
+        )
+    })
+
     return graph
 }
 
@@ -130,8 +130,33 @@ export const assertGraphsEqual = (
     actual: PdDspGraph.Graph,
     expected: PdDspGraph.Graph
 ): void => {
-    assert.deepEqual(Object.keys(actual).sort(), Object.keys(expected).sort())
+    assert.deepEqual(Object.keys(actual).sort(), Object.keys(expected).sort(), 'graphs should contain the same nodes')
     Object.keys(actual).forEach((nodeId) =>
         assert.deepEqual(actual[nodeId], expected[nodeId])
     )
+}
+
+export const assertGraphIntegrity = (graph: PdDspGraph.Graph) => {
+    const graphIntegrity = testGraphIntegrity(graph)
+    assert.equal(graphIntegrity, null, `graph integrity test failed : \n ${JSON.stringify(graphIntegrity, null, 2)}`)
+}
+
+export const assertGraphConnections = (
+    graph: PdDspGraph.Graph,
+    conciseExpectedConnections: Array<ConciseGraphConnection>, 
+) => {
+    const expectedConnections = conciseExpectedConnections.map(connection => connection.map(makePortletAddress))
+    assertGraphIntegrity(graph)
+    const actualConnections = Object.keys(graph).reduce((connections, nodeId) => {
+        const moreConnections = mapNodeSources(graph, nodeId, 
+            (sourceAddress, sinkAddress) => [sourceAddress, sinkAddress])
+        return [...connections, ...moreConnections]
+    }, [] as Array<GraphConnection>)
+
+    const _comparator = ([a1, a2]: GraphConnection, [b1, b2]: GraphConnection) => portletAddressesEqual(a1, b1) && portletAddressesEqual(a2, b2)
+    const unexpectedConnections = differenceWith(actualConnections, expectedConnections, _comparator)
+    const missingConnections = differenceWith(expectedConnections, actualConnections, _comparator)
+
+    assert.equal(unexpectedConnections.length, 0, `Unexpected connections : ${JSON.stringify(unexpectedConnections, null, 2)}`)
+    assert.equal(missingConnections.length, 0, `Missing connections : ${JSON.stringify(missingConnections, null, 2)}`)
 }

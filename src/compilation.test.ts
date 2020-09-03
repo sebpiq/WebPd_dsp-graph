@@ -13,7 +13,7 @@ import assert from 'assert'
 import { Compilation } from './compilation'
 import { pdJsonDefaults, makePd, pdJsonNodeDefaults } from './test-helpers'
 
-describe('compile', () => {
+describe('compilation', () => {
     let compilation: Compilation
     beforeEach(() => {
         compilation = new Compilation(pdJsonDefaults(), {})
