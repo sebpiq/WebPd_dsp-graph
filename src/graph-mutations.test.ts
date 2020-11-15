@@ -18,7 +18,8 @@ import {
     disconnect,
     addNode,
 } from './graph-mutations'
-import { nodeDefaults, assertGraphConnections, makeGraph } from './test-helpers'
+import { makeGraph } from '@webpd/shared/test-helpers'
+import { assertGraphConnections } from './test-helpers'
 
 describe('graph-mutations', () => {
     describe('addNode', () => {
@@ -26,12 +27,12 @@ describe('graph-mutations', () => {
             const graph: PdDspGraph.Graph = {}
             const node = {
                 id: '1',
-                proto: 'osc~',
+                type: 'osc~',
                 sinks: {},
                 sources: {},
             }
             addNode(graph, node)
-            assert.deepEqual(graph, {
+            assert.deepStrictEqual(graph, {
                 '1': node,
             })
         })
@@ -40,19 +41,19 @@ describe('graph-mutations', () => {
             const graph: PdDspGraph.Graph = {}
             const node1 = {
                 id: '1',
-                proto: 'osc~',
+                type: 'osc~',
                 sinks: {},
                 sources: {},
             }
             const node1Bis = {
                 id: '1',
-                proto: 'phasor~',
+                type: 'phasor~',
                 sinks: {},
                 sources: {},
             }
             addNode(graph, node1)
             addNode(graph, node1Bis)
-            assert.deepEqual(graph, {
+            assert.deepStrictEqual(graph, {
                 '1': node1,
             })
         })
@@ -63,13 +64,13 @@ describe('graph-mutations', () => {
             const graph: PdDspGraph.Graph = {}
             ensureNode(graph, '1', {
                 id: '1',
-                proto: 'osc~',
+                type: 'osc~',
                 args: [440],
             })
-            assert.deepEqual(graph, {
+            assert.deepStrictEqual(graph, {
                 '1': {
                     id: '1',
-                    proto: 'osc~',
+                    type: 'osc~',
                     sources: {},
                     sinks: {},
                 },
@@ -80,19 +81,19 @@ describe('graph-mutations', () => {
             const graph: PdDspGraph.Graph = {
                 '1': {
                     id: '1',
-                    proto: 'osc~',
+                    type: 'osc~',
                     sources: {},
                     sinks: {},
                 },
             }
             ensureNode(graph, '1', {
                 id: '1',
-                proto: 'phasor~',
+                type: 'phasor~',
                 args: [440],
             })
-            assert.deepEqual(graph['1'], {
+            assert.deepStrictEqual(graph['1'], {
                 id: '1',
-                proto: 'osc~',
+                type: 'osc~',
                 sources: {},
                 sinks: {},
             })
@@ -100,7 +101,6 @@ describe('graph-mutations', () => {
     })
 
     describe('connect', () => {
-
         it('should connect nodes that are not yet connected', () => {
             const graph: PdDspGraph.Graph = makeGraph({
                 '0': {},
@@ -110,13 +110,22 @@ describe('graph-mutations', () => {
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
             assertGraphConnections(graph, [
-                [['0', 0], ['1', 0]]
+                [
+                    ['0', 0],
+                    ['1', 0],
+                ],
             ])
 
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 1 })
             assertGraphConnections(graph, [
-                [['0', 0], ['1', 0]],
-                [['0', 0], ['1', 1]]
+                [
+                    ['0', 0],
+                    ['1', 0],
+                ],
+                [
+                    ['0', 0],
+                    ['1', 1],
+                ],
             ])
         })
 
@@ -128,23 +137,33 @@ describe('graph-mutations', () => {
 
             connect(graph, { id: '0', portlet: 10 }, { id: '1', portlet: 20 })
             assertGraphConnections(graph, [
-                [['0', 10], ['1', 20]]
+                [
+                    ['0', 10],
+                    ['1', 20],
+                ],
             ])
 
             connect(graph, { id: '0', portlet: 10 }, { id: '1', portlet: 20 })
             assertGraphConnections(graph, [
-                [['0', 10], ['1', 20]]
+                [
+                    ['0', 10],
+                    ['1', 20],
+                ],
             ])
             // Check that not added twice
-            assert.deepEqual(graph['0'].sinks, {10: [{ id: '1', portlet: 20 }]})
-            assert.deepEqual(graph['1'].sources, {20: { id: '0', portlet: 10 }})
+            assert.deepStrictEqual(graph['0'].sinks, {
+                10: [{ id: '1', portlet: 20 }],
+            })
+            assert.deepStrictEqual(graph['1'].sources, {
+                20: { id: '0', portlet: 10 },
+            })
         })
     })
 
     describe('disconnect', () => {
         it('should disconnect nodes that are connected', () => {
             const graph: PdDspGraph.Graph = makeGraph({
-                'n0': {
+                n0: {
                     sinks: {
                         10: [
                             ['n1', 21],
@@ -153,35 +172,61 @@ describe('graph-mutations', () => {
                         11: [['n1', 23]],
                     },
                 },
-                'n1': {},
-                'n2': {},
+                n1: {},
+                n2: {},
             })
             assertGraphConnections(graph, [
-                [['n0', 10], ['n1', 21]],
-                [['n0', 10], ['n2', 22]],
-                [['n0', 11], ['n1', 23]],
+                [
+                    ['n0', 10],
+                    ['n1', 21],
+                ],
+                [
+                    ['n0', 10],
+                    ['n2', 22],
+                ],
+                [
+                    ['n0', 11],
+                    ['n1', 23],
+                ],
             ])
 
-            disconnect(graph, { id: 'n0', portlet: 10 }, { id: 'n2', portlet: 22 })
+            disconnect(
+                graph,
+                { id: 'n0', portlet: 10 },
+                { id: 'n2', portlet: 22 }
+            )
             assertGraphConnections(graph, [
-                [['n0', 10], ['n1', 21]],
-                [['n0', 11], ['n1', 23]],
+                [
+                    ['n0', 10],
+                    ['n1', 21],
+                ],
+                [
+                    ['n0', 11],
+                    ['n1', 23],
+                ],
             ])
 
-            disconnect(graph, { id: 'n0', portlet: 11 }, { id: 'n1', portlet: 23 })
+            disconnect(
+                graph,
+                { id: 'n0', portlet: 11 },
+                { id: 'n1', portlet: 23 }
+            )
             assertGraphConnections(graph, [
-                [['n0', 10], ['n1', 21]],
+                [
+                    ['n0', 10],
+                    ['n1', 21],
+                ],
             ])
         })
 
         it('should do nothing if connection doesnt exist', () => {
             const graph: PdDspGraph.Graph = makeGraph({
-                'n0': {
+                n0: {
                     sinks: {
                         0: [['n1', 1]],
                     },
                 },
-                'n1': {},
+                n1: {},
             })
 
             disconnect(
@@ -191,7 +236,10 @@ describe('graph-mutations', () => {
             )
 
             assertGraphConnections(graph, [
-                [['n0', 0], ['n1', 1]],
+                [
+                    ['n0', 0],
+                    ['n1', 1],
+                ],
             ])
         })
     })
@@ -208,14 +256,26 @@ describe('graph-mutations', () => {
             connect(graph, { id: '0', portlet: 1 }, { id: '2', portlet: 1 })
             connect(graph, { id: '1', portlet: 0 }, { id: '2', portlet: 2 })
             assertGraphConnections(graph, [
-                [['0', 0], ['2', 0]],
-                [['0', 1], ['2', 1]],
-                [['1', 0], ['2', 2]],
+                [
+                    ['0', 0],
+                    ['2', 0],
+                ],
+                [
+                    ['0', 1],
+                    ['2', 1],
+                ],
+                [
+                    ['1', 0],
+                    ['2', 2],
+                ],
             ])
 
             disconnectNodes(graph, '0', '2')
             assertGraphConnections(graph, [
-                [['1', 0], ['2', 2]],
+                [
+                    ['1', 0],
+                    ['2', 2],
+                ],
             ])
         })
     })
@@ -231,14 +291,23 @@ describe('graph-mutations', () => {
             connect(graph, { id: '0', portlet: 0 }, { id: '2', portlet: 0 })
             connect(graph, { id: '1', portlet: 0 }, { id: '2', portlet: 1 })
             assertGraphConnections(graph, [
-                [['0', 0], ['2', 0]],
-                [['1', 0], ['2', 1]],
+                [
+                    ['0', 0],
+                    ['2', 0],
+                ],
+                [
+                    ['1', 0],
+                    ['2', 1],
+                ],
             ])
 
             deleteNode(graph, '1')
-            assert.deepEqual(Object.keys(graph), ['0', '2'])
+            assert.deepStrictEqual(Object.keys(graph), ['0', '2'])
             assertGraphConnections(graph, [
-                [['0', 0], ['2', 0]],
+                [
+                    ['0', 0],
+                    ['2', 0],
+                ],
             ])
         })
 
@@ -252,12 +321,18 @@ describe('graph-mutations', () => {
             connect(graph, { id: '0', portlet: 0 }, { id: '1', portlet: 0 })
             connect(graph, { id: '0', portlet: 0 }, { id: '2', portlet: 1 })
             assertGraphConnections(graph, [
-                [['0', 0], ['1', 0]],
-                [['0', 0], ['2', 1]],
+                [
+                    ['0', 0],
+                    ['1', 0],
+                ],
+                [
+                    ['0', 0],
+                    ['2', 1],
+                ],
             ])
 
             deleteNode(graph, '0')
-            assert.deepEqual(Object.keys(graph), ['1', '2'])
+            assert.deepStrictEqual(Object.keys(graph), ['1', '2'])
             assertGraphConnections(graph, [])
         })
     })

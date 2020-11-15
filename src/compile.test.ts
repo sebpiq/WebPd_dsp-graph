@@ -18,23 +18,22 @@ import {
     _inlineSubpatch,
 } from './compile'
 import {
+    assertGraphsEqual,
+} from './test-helpers'
+import {
     pdJsonPatchDefaults,
     pdJsonNodeDefaults,
     makePd,
-    assertGraphsEqual,
     makeGraph,
     nodeDefaults,
-} from './test-helpers'
+    makeRegistry,
+} from '@webpd/shared/test-helpers'
 import { getReferencesToSubpatch } from './pdjson-helpers'
 import { Compilation } from './compilation'
 
-const DUMMY_REGISTRY: PdJson.Registry = {
-    [pdJsonNodeDefaults('').proto]: {
-        getInletType: (): PdJson.PortletType => 'control' as PdJson.PortletType,
-        getOutletType: (): PdJson.PortletType =>
-            'control' as PdJson.PortletType,
-    },
-}
+const DUMMY_REGISTRY = makeRegistry({
+    [pdJsonNodeDefaults('').type]: {},
+})
 
 describe('compile', () => {
     describe('buildGraph', () => {
@@ -65,10 +64,10 @@ describe('compile', () => {
 
             buildGraph(compilation)
 
-            assert.deepEqual(compilation.graph, {
+            assert.deepStrictEqual(compilation.graph, {
                 'pd:p1:n1': {
                     id: 'pd:p1:n1',
-                    proto: 'DUMMY',
+                    type: 'DUMMY',
                     sources: {},
                     sinks: {
                         0: [{ id: 'pd:p1:n2', portlet: 0 }],
@@ -76,7 +75,7 @@ describe('compile', () => {
                 },
                 'pd:p1:n2': {
                     id: 'pd:p1:n2',
-                    proto: 'DUMMY',
+                    type: 'DUMMY',
                     sources: {
                         0: { id: 'pd:p1:n1', portlet: 0 },
                     },
@@ -84,7 +83,7 @@ describe('compile', () => {
                 },
                 'pd:p2:n1': {
                     id: 'pd:p2:n1',
-                    proto: 'DUMMY',
+                    type: 'DUMMY',
                     sinks: {},
                     sources: {},
                 },
@@ -100,14 +99,14 @@ describe('compile', () => {
                             nodeSource1B: pdJsonNodeDefaults('nodeSource1B'),
                             nodeSink1: {
                                 ...pdJsonNodeDefaults('nodeSink1'),
-                                proto: 'type1',
+                                type: 'type1',
                             },
 
                             nodeSource2A: pdJsonNodeDefaults('nodeSource2A'),
                             nodeSource2B: pdJsonNodeDefaults('nodeSource2B'),
                             nodeSink2: {
                                 ...pdJsonNodeDefaults('nodeSink2'),
-                                proto: 'type2',
+                                type: 'type2',
                             },
                         },
                         connections: [
@@ -119,25 +118,21 @@ describe('compile', () => {
                     },
                 },
             })
-            const registry: PdJson.Registry = {
+            const registry: PdJson.Registry = makeRegistry({
                 type1: {
-                    getInletType: (): PdJson.PortletType =>
-                        'signal' as PdJson.PortletType,
-                    getOutletType: (): PdJson.PortletType =>
-                        'signal' as PdJson.PortletType,
+                    inletType: 'signal' as PdJson.PortletType,
+                    outletType: 'signal' as PdJson.PortletType,
                 },
                 type2: {
-                    getInletType: (): PdJson.PortletType =>
-                        'control' as PdJson.PortletType,
-                    getOutletType: (): PdJson.PortletType =>
-                        'control' as PdJson.PortletType,
+                    inletType: 'control' as PdJson.PortletType,
+                    outletType: 'control' as PdJson.PortletType,
                 },
-            }
+            })
             const compilation: Compilation = new Compilation(pd, registry)
 
             buildGraph(compilation)
 
-            assert.deepEqual(Object.keys(compilation.graph).sort(), [
+            assert.deepStrictEqual(Object.keys(compilation.graph).sort(), [
                 'mixer:pd:p:nodeSink1:0',
                 'mixer:pd:p:nodeSink2:0',
                 'pd:p:nodeSink1',
@@ -147,7 +142,7 @@ describe('compile', () => {
                 'pd:p:nodeSource2A',
                 'pd:p:nodeSource2B',
             ])
-            assert.deepEqual(compilation.graph['mixer:pd:p:nodeSink1:0'], {
+            assert.deepStrictEqual(compilation.graph['mixer:pd:p:nodeSink1:0'], {
                 ...nodeDefaults('mixer:pd:p:nodeSink1:0', '+~'),
                 sources: {
                     0: { id: 'pd:p:nodeSource1A', portlet: 0 },
@@ -157,7 +152,7 @@ describe('compile', () => {
                     0: [{ id: 'pd:p:nodeSink1', portlet: 0 }],
                 },
             })
-            assert.deepEqual(compilation.graph['mixer:pd:p:nodeSink2:0'], {
+            assert.deepStrictEqual(compilation.graph['mixer:pd:p:nodeSink2:0'], {
                 ...nodeDefaults('mixer:pd:p:nodeSink2:0', 'trigger'),
                 sources: {
                     0: { id: 'pd:p:nodeSource2A', portlet: 0 },
@@ -217,8 +212,8 @@ describe('compile', () => {
                 )
 
                 // inlet nodes should be deleted
-                assert.equal(compilation.graph['sp:inlet1'], undefined)
-                assert.equal(compilation.graph['sp:inlet2'], undefined)
+                assert.strictEqual(compilation.graph['sp:inlet1'], undefined)
+                assert.strictEqual(compilation.graph['sp:inlet2'], undefined)
 
                 const expectedGraph = makeGraph({
                     'pd:p:n1': {
@@ -282,8 +277,8 @@ describe('compile', () => {
                 buildGraph(compilation)
 
                 // outlet nodes should be created
-                assert.equal(!!compilation.graph['pd:sp:outlet1'], true)
-                assert.equal(!!compilation.graph['pd:sp:outlet2'], true)
+                assert.strictEqual(!!compilation.graph['pd:sp:outlet1'], true)
+                assert.strictEqual(!!compilation.graph['pd:sp:outlet2'], true)
 
                 const referencesToSubpatch = getReferencesToSubpatch(pd, 'sp')
                 _inlineSubpatchOutlets(
@@ -293,8 +288,8 @@ describe('compile', () => {
                 )
 
                 // outlet nodes should be deleted
-                assert.equal(compilation.graph['pd:sp:outlet1'], undefined)
-                assert.equal(compilation.graph['pd:sp:outlet2'], undefined)
+                assert.strictEqual(compilation.graph['pd:sp:outlet1'], undefined)
+                assert.strictEqual(compilation.graph['pd:sp:outlet2'], undefined)
 
                 const expectedGraph = makeGraph({
                     'pd:sp:n1': {
@@ -311,10 +306,13 @@ describe('compile', () => {
                     'pd:p:n1': {},
                     'pd:p:n2': {},
                 })
-                
-                // We omit the subpatch node, because at this stage, its outlet connections 
+
+                // We omit the subpatch node, because at this stage, its outlet connections
                 // are not relevant anymore.
-                const {"pd:p:sp": trash, ...compilationGraph} = compilation.graph
+                const {
+                    'pd:p:sp': trash,
+                    ...compilationGraph
+                } = compilation.graph
                 assertGraphsEqual(compilationGraph, expectedGraph)
             })
         })

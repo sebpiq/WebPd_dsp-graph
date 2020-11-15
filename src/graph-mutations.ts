@@ -29,7 +29,7 @@ export const ensureNode = (
     if (!graph[nodeId]) {
         graph[nodeId] = {
             id: nodeId,
-            proto: jsonNode.proto,
+            type: jsonNode.type,
             sinks: {},
             sources: {},
         }

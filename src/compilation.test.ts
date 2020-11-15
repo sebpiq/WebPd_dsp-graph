@@ -11,7 +11,7 @@
 
 import assert from 'assert'
 import { Compilation } from './compilation'
-import { pdJsonDefaults, makePd, pdJsonNodeDefaults } from './test-helpers'
+import { pdJsonDefaults, makePd, pdJsonNodeDefaults, makeRegistry } from '@webpd/shared/test-helpers'
 
 describe('compilation', () => {
     let compilation: Compilation
@@ -28,37 +28,32 @@ describe('compilation', () => {
                         nodes: {
                             n1: {
                                 ...pdJsonNodeDefaults('n1'),
-                                proto: 'type1',
+                                type: 'type1',
                             },
                             n2: {
                                 ...pdJsonNodeDefaults('n1'),
-                                proto: 'type2',
+                                type: 'type2',
                             },
                         },
                         connections: [],
                     },
                 },
             })
-            const registry: PdJson.Registry = {
+            const registry = makeRegistry({
                 type1: {
-                    getInletType: (): PdJson.PortletType =>
-                        'signal' as PdJson.PortletType,
-                    getOutletType: (): PdJson.PortletType =>
-                        'signal' as PdJson.PortletType,
+                    inletType: 'signal' as PdJson.PortletType,
+                    outletType: 'signal' as PdJson.PortletType,
                 },
                 type2: {
-                    getInletType: (): PdJson.PortletType =>
-                        'control' as PdJson.PortletType,
-                    getOutletType: (): PdJson.PortletType =>
-                        'control' as PdJson.PortletType,
-                },
-            }
+                    inletType: 'control' as PdJson.PortletType,
+                    outletType: 'control' as PdJson.PortletType,                },
+            })
             compilation = new Compilation(pd, registry)
-            assert.equal(
+            assert.strictEqual(
                 compilation.getSinkType({ id: 'pd:p:n1', portlet: 1 }),
                 'signal'
             )
-            assert.equal(
+            assert.strictEqual(
                 compilation.getSinkType({ id: 'pd:p:n2', portlet: 0 }),
                 'control'
             )
@@ -70,8 +65,8 @@ describe('compilation', () => {
             const [patchId, nodeId] = compilation.graphNodeIdToPdNodeId(
                 `pd:patch:node`
             )
-            assert.equal(patchId, 'patch')
-            assert.equal(nodeId, 'node')
+            assert.strictEqual(patchId, 'patch')
+            assert.strictEqual(nodeId, 'node')
         })
         it('should throw an error if invalid namespace', () => {
             assert.throws(() =>
@@ -82,7 +77,7 @@ describe('compilation', () => {
 
     describe('buildGraphNodeId', () => {
         it('should build a correct id', () => {
-            assert.equal(
+            assert.strictEqual(
                 compilation.buildGraphNodeId('patch', 'node'),
                 `pd:patch:node`
             )
@@ -91,7 +86,7 @@ describe('compilation', () => {
 
     describe('buildMixerNodeId', () => {
         it('should build a correct id', () => {
-            assert.equal(
+            assert.strictEqual(
                 compilation.buildMixerNodeId({ id: 'node', portlet: 44 }),
                 `mixer:node:44`
             )

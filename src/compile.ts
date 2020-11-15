@@ -10,7 +10,6 @@
  */
 
 import * as graphMutations from './graph-mutations'
-// import PdJson from '@webpd/shared/types/PdJson'
 import { getReferencesToSubpatch, ReferencesToSubpatch } from './pdjson-helpers'
 import { getSource, getSinks, portletAddressesEqual } from './graph-helpers'
 import partition from 'lodash.partition'
@@ -61,18 +60,18 @@ export const buildGraph = (compilation: Compilation): void => {
         while (allConnections.length) {
             const [, sinkAddress] = allConnections[0]
             let connectionsToSinkAddress: typeof allConnections
-            ;[connectionsToSinkAddress, allConnections] = partition(
+            ;[
+                connectionsToSinkAddress,
                 allConnections,
-                ([, otherSinkAddress]) =>
-                    portletAddressesEqual(
-                        sinkAddress,
-                        otherSinkAddress
-                    )
+            ] = partition(allConnections, ([, otherSinkAddress]) =>
+                portletAddressesEqual(sinkAddress, otherSinkAddress)
             )
 
             _buildGraphConnections(
                 compilation,
-                connectionsToSinkAddress.map(([sourceAddress]) => sourceAddress),
+                connectionsToSinkAddress.map(
+                    ([sourceAddress]) => sourceAddress
+                ),
                 sinkAddress
             )
         }
@@ -96,14 +95,14 @@ const _buildGraphConnections = (
     if (sinkType === 'control') {
         mixerNode = graphMutations.addNode(compilation.graph, {
             id: compilation.buildMixerNodeId(sinkAddress),
-            proto: 'trigger',
+            type: 'trigger',
             sinks: {},
             sources: {},
         })
     } else if (sinkType === 'signal') {
         mixerNode = graphMutations.addNode(compilation.graph, {
             id: compilation.buildMixerNodeId(sinkAddress),
-            proto: '+~',
+            type: '+~',
             sinks: {},
             sources: {},
         })
@@ -173,8 +172,11 @@ export const _inlineSubpatchInlets = (
             inletPdNodeId: PdJson.ObjectLocalId,
             subpatchNodeInlet: PdJson.PortletId
         ) => {
-            const inletNodeId = compilation.buildGraphNodeId(subpatch.id, inletPdNodeId)
-            
+            const inletNodeId = compilation.buildGraphNodeId(
+                subpatch.id,
+                inletPdNodeId
+            )
+
             // Sinks are nodes inside the subpatch which receive connections from the [inlet] object.
             const sinkAddresses = getSinks(graph, inletNodeId, 0)
             referencesToSubpatch.forEach(([outerPatchId, subpatchPdNodeId]) => {
@@ -182,18 +184,17 @@ export const _inlineSubpatchInlets = (
                 // inlet of the [pd subpatch] object.
                 const sourceAddress = getSource(
                     graph,
-                    compilation.buildGraphNodeId(outerPatchId, subpatchPdNodeId),
+                    compilation.buildGraphNodeId(
+                        outerPatchId,
+                        subpatchPdNodeId
+                    ),
                     subpatchNodeInlet
                 )
                 if (!sourceAddress) {
                     return
                 }
                 sinkAddresses.forEach((sinkAddress) =>
-                    graphMutations.connect(
-                        graph,
-                        sourceAddress,
-                        sinkAddress
-                    )
+                    graphMutations.connect(graph, sourceAddress, sinkAddress)
                 )
             })
             graphMutations.deleteNode(graph, inletNodeId)
@@ -220,22 +221,27 @@ export const _inlineSubpatchOutlets = (
             // Sources are nodes inside the subpatch which are connected to the [outlet] object.
             const sourceAddress = getSource(graph, outletNodeId, 0)
             if (sourceAddress) {
-                referencesToSubpatch.forEach(([outerPatchId, subpatchPdNodeId]) => {
-                    // Sinks are nodes outside the subpatch, which receive connection from the corresponding
-                    // outlet of the [pd subpatch] object.
-                    const sinkAddresses = getSinks(
-                        graph,
-                        compilation.buildGraphNodeId(outerPatchId, subpatchPdNodeId),
-                        subpatchNodeOutlet
-                    )
-                    sinkAddresses.forEach((sinkAddress) =>
-                        graphMutations.connect(
+                referencesToSubpatch.forEach(
+                    ([outerPatchId, subpatchPdNodeId]) => {
+                        // Sinks are nodes outside the subpatch, which receive connection from the corresponding
+                        // outlet of the [pd subpatch] object.
+                        const sinkAddresses = getSinks(
                             graph,
-                            sourceAddress,
-                            sinkAddress
+                            compilation.buildGraphNodeId(
+                                outerPatchId,
+                                subpatchPdNodeId
+                            ),
+                            subpatchNodeOutlet
                         )
-                    )
-                })
+                        sinkAddresses.forEach((sinkAddress) =>
+                            graphMutations.connect(
+                                graph,
+                                sourceAddress,
+                                sinkAddress
+                            )
+                        )
+                    }
+                )
             }
 
             graphMutations.deleteNode(graph, outletNodeId)

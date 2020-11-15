@@ -11,7 +11,7 @@
 
 import assert from 'assert'
 import { getReferencesToSubpatch } from './pdjson-helpers'
-import { pdJsonPatchDefaults, pdJsonNodeDefaults } from './test-helpers'
+import { pdJsonPatchDefaults, pdJsonNodeDefaults } from '@webpd/shared/test-helpers'
 
 describe('pdjson-helpers', () => {
     describe('getReferencesToSubpatch', () => {

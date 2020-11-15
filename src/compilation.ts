@@ -28,9 +28,9 @@ export class Compilation {
     getSinkType(sinkAddress: PdDspGraph.PortletAddress): PdJson.PortletType {
         const [patchId, pdNodeId] = this.graphNodeIdToPdNodeId(sinkAddress.id)
         const pdNode = this.pd.patches[patchId].nodes[pdNodeId]
-        const pdNodeTemplate = this.registry[pdNode.proto]
+        const pdNodeTemplate = this.registry[pdNode.type]
         if (!pdNodeTemplate) {
-            throw new Error(`unknown node type ${pdNode.proto}`)
+            throw new Error(`unknown node type ${pdNode.type}`)
         }
         return pdNodeTemplate.getInletType(sinkAddress.portlet)
     }
